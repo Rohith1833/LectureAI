@@ -1,0 +1,41 @@
+{
+  "job_id": "355a7715-7a46-4d27-97ed-cf9021e8411d",
+  "upload_id": "c2f8e466-48e8-49a2-9829-be9c38d9fd97",
+  "status": "completed",
+  "progress": 100,
+  "current_stage": "Completed",
+  "created_at": "2026-08-01T15:10:09.495491+00:00",
+  "updated_at": "2026-08-01T15:10:10.579187+00:00",
+  "pipeline": [
+    {
+      "agent": "DocumentAgent",
+      "status": "pending"
+    },
+    {
+      "agent": "UnitAgent",
+      "status": "pending"
+    },
+    {
+      "agent": "OutlineAgent",
+      "status": "pending"
+    },
+    {
+      "agent": "ContentAgent",
+      "status": "pending"
+    },
+    {
+      "agent": "VisualAgent",
+      "status": "pending"
+    },
+    {
+      "agent": "QualityAgent",
+      "status": "pending"
+    },
+    {
+      "agent": "PPTAgent",
+      "status": "pending"
+    }
+  ],
+  "error": null,
+  "document_id": "bda638b5-5243-4aa4-b395-e4d1ada6eb4d"
+}

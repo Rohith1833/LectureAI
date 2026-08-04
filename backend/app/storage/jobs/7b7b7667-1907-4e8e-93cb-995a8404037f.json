@@ -1,0 +1,40 @@
+{
+  "job_id": "7b7b7667-1907-4e8e-93cb-995a8404037f",
+  "upload_id": "68f84770-126c-444d-be17-16368f27c1d7",
+  "status": "processing",
+  "progress": 20,
+  "current_stage": "Preparing",
+  "created_at": "2026-07-31T14:24:33.873241+00:00",
+  "updated_at": "2026-07-31T14:24:35.885397+00:00",
+  "pipeline": [
+    {
+      "agent": "DocumentAgent",
+      "status": "pending"
+    },
+    {
+      "agent": "UnitAgent",
+      "status": "pending"
+    },
+    {
+      "agent": "OutlineAgent",
+      "status": "pending"
+    },
+    {
+      "agent": "ContentAgent",
+      "status": "pending"
+    },
+    {
+      "agent": "VisualAgent",
+      "status": "pending"
+    },
+    {
+      "agent": "QualityAgent",
+      "status": "pending"
+    },
+    {
+      "agent": "PPTAgent",
+      "status": "pending"
+    }
+  ],
+  "error": null
+}
