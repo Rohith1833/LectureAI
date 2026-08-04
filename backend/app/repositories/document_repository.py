@@ -27,6 +27,12 @@ class DocumentRepository:
             extraction_version=result.extraction_version,
             extraction_timestamp=result.extraction_timestamp,
             processing_time=result.processing_time,
+            ocr_status=result.ocr_status,
+            ocr_engine=result.ocr_engine,
+            ocr_version=result.ocr_version,
+            ocr_confidence=result.ocr_confidence,
+            ocr_language=result.ocr_language,
+            ocr_processing_time=result.ocr_processing_time,
         )
         self.db.add(db_doc)
         self.db.flush()  # Populates db_doc.id
@@ -85,6 +91,7 @@ class DocumentRepository:
                 next_block_id=b.next_block_id,
                 heading_level=b.heading_level,
                 extra_metadata=b.extra_metadata,
+                provenance=b.provenance,
             )
             self.db.add(db_block)
 

@@ -9,6 +9,7 @@ from loguru import logger
 from app.schemas.job import JobState, JobStage, JobStatusResponseData, PipelineStep
 from app.utils.timestamps import utc_now
 from app.agents.document_agent import run_document_agent
+from app.services.ocr.page_detector import OCRStrategy
 
 from app.core.storage import METADATA_DIR, JOBS_DIR, UPLOADS_DIR
 
@@ -126,29 +127,35 @@ async def run_pdf_extraction_pipeline(job_id: str, upload_id: str) -> None:
     logger.info("PDF extraction pipeline task started for Job: {}", job_id)
 
     try:
-        # 1. Transition from queued to processing, progress=5, stage=Preparing
-        await asyncio.sleep(0.5)
+        # Load job metadata to find requested OCR Strategy
+        job_doc = _read_job_document(job_id)
+        ocr_strategy_str = job_doc.get("ocr_strategy", "AUTO")
+        strategy_enum = OCRStrategy(ocr_strategy_str)
+
+        # 1. Transition to Preparing (5%)
+        await asyncio.sleep(0.1)
         update_job_status(job_id, JobState.PROCESSING, JobStage.PREPARING, 5)
 
-        # 2. Get the stored filename from metadata
+        # 2. Get target filename
         metadata_file = os.path.join(METADATA_DIR, f"{upload_id}.json")
         with open(metadata_file, "r", encoding="utf-8") as f:
             meta = json.load(f)
         stored_filename = meta["stored_filename"]
         file_path = os.path.join(UPLOADS_DIR, stored_filename)
 
-        # 3. Transition to Reading Document, progress=15
-        await asyncio.sleep(0.5)
-        update_job_status(job_id, JobState.PROCESSING, JobStage.READING, 15)
+        # 3. Transition to Reading Document (20%)
+        await asyncio.sleep(0.1)
+        update_job_status(job_id, JobState.PROCESSING, JobStage.READING, 20)
 
-        # 4. Trigger CPU-bound document agent inside a worker thread
-        # This keeps the main FastAPI async loop fully non-blocking
-        update_job_status(job_id, JobState.PROCESSING, JobStage.READING, 30)
+        # 4. Transition to OCR stage (50%)
+        update_job_status(job_id, JobState.PROCESSING, JobStage.OCR, 50)
 
         # Run DocumentAgent in a separate thread
-        doc_id = await asyncio.to_thread(run_document_agent, upload_id, file_path)
+        doc_id = await asyncio.to_thread(
+            run_document_agent, upload_id, file_path, ocr_strategy=strategy_enum
+        )
 
-        # 5. Extract completed. Update status to Completed, progress=100
+        # 5. Extract completed (100%)
         update_job_status(job_id, JobState.COMPLETED, JobStage.COMPLETED, 100, document_id=doc_id)
 
     except Exception as e:
@@ -160,8 +167,10 @@ async def run_pdf_extraction_pipeline(job_id: str, upload_id: str) -> None:
             logger.error("Failed to mark job as failed: {}", str(fail_err))
 
 
-def create_job(upload_id: str, background_tasks: BackgroundTasks) -> Dict[str, Any]:
-    """Validate upload ID, initialize a new job JSON metadata, and start simulation."""
+def create_job(
+    upload_id: str, background_tasks: BackgroundTasks, ocr_strategy: str = "AUTO"
+) -> Dict[str, Any]:
+    """Validate upload ID, initialize a new job JSON metadata, and start extraction."""
     # Verify upload metadata exists
     metadata_file = os.path.join(METADATA_DIR, f"{upload_id}.json")
     if not os.path.exists(metadata_file):
@@ -219,6 +228,7 @@ def create_job(upload_id: str, background_tasks: BackgroundTasks) -> Dict[str, A
         "created_at": now,
         "updated_at": now,
         "pipeline": pipeline_steps,
+        "ocr_strategy": ocr_strategy,
         "error": None,
     }
 

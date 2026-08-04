@@ -15,7 +15,9 @@ router = APIRouter()
 @router.post("/jobs", response_model=JobCreateResponse)
 async def create_job(payload: JobCreate, background_tasks: BackgroundTasks) -> JobCreateResponse:
     """Create a new presentation compiler background job."""
-    res = job_service.create_job(payload.upload_id, background_tasks)
+    res = job_service.create_job(
+        payload.upload_id, background_tasks, ocr_strategy=payload.ocr_strategy
+    )
     return JobCreateResponse(
         success=True,
         message="Job created",

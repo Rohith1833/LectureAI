@@ -45,6 +45,7 @@ class JobCreate(BaseModel):
     """Request model for creating a job from an upload ID."""
 
     upload_id: str
+    ocr_strategy: Optional[str] = "AUTO"  # "AUTO", "FORCE", "SKIP"
 
 
 class JobCreateResponseData(BaseModel):

@@ -18,6 +18,47 @@ from app.db.session import engine
 from app.models.document import Base
 
 
+from sqlalchemy import text, inspect
+
+def run_migrations():
+    """Dynamically append missing OCR and provenance fields to the database to ensure backward compatibility."""
+    logger.info("Verifying database schema migrations...")
+    try:
+        inspector = inspect(engine)
+        
+        # Migrate 'documents' table
+        doc_cols = [c["name"] for c in inspector.get_columns("documents")]
+        with engine.begin() as conn:
+            if "ocr_status" not in doc_cols:
+                logger.info("Migration: adding ocr_status to documents table")
+                conn.execute(text("ALTER TABLE documents ADD COLUMN ocr_status VARCHAR(32) DEFAULT NULL"))
+            if "ocr_engine" not in doc_cols:
+                logger.info("Migration: adding ocr_engine to documents table")
+                conn.execute(text("ALTER TABLE documents ADD COLUMN ocr_engine VARCHAR(64) DEFAULT NULL"))
+            if "ocr_version" not in doc_cols:
+                logger.info("Migration: adding ocr_version to documents table")
+                conn.execute(text("ALTER TABLE documents ADD COLUMN ocr_version VARCHAR(32) DEFAULT NULL"))
+            if "ocr_confidence" not in doc_cols:
+                logger.info("Migration: adding ocr_confidence to documents table")
+                conn.execute(text("ALTER TABLE documents ADD COLUMN ocr_confidence FLOAT DEFAULT NULL"))
+            if "ocr_language" not in doc_cols:
+                logger.info("Migration: adding ocr_language to documents table")
+                conn.execute(text("ALTER TABLE documents ADD COLUMN ocr_language VARCHAR(32) DEFAULT NULL"))
+            if "ocr_processing_time" not in doc_cols:
+                logger.info("Migration: adding ocr_processing_time to documents table")
+                conn.execute(text("ALTER TABLE documents ADD COLUMN ocr_processing_time FLOAT DEFAULT NULL"))
+
+        # Migrate 'document_blocks' table
+        block_cols = [c["name"] for c in inspector.get_columns("document_blocks")]
+        with engine.begin() as conn:
+            if "provenance" not in block_cols:
+                logger.info("Migration: adding provenance to document_blocks table")
+                conn.execute(text("ALTER TABLE document_blocks ADD COLUMN provenance VARCHAR(32) DEFAULT 'NATIVE'"))
+        logger.info("Database schema checks complete.")
+    except Exception as e:
+        logger.error("Database auto-migration failed: {}", str(e))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Handle application startup and shutdown events."""
@@ -30,6 +71,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Initializing database schemas...")
     Base.metadata.create_all(bind=engine)
     logger.info("Database schemas created.")
+    
+    # Run dynamic SQLite auto-alter schema migrations
+    run_migrations()
 
     yield
     logger.info("Shutting down {}", settings.PROJECT_NAME)

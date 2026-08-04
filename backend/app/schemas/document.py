@@ -69,6 +69,7 @@ class BlockSchema(BaseModel):
     next_block_id: Optional[str] = None
     heading_level: Optional[int] = None  # 1 to 6 (H1 to H6)
     extra_metadata: Optional[dict] = None
+    provenance: str = "NATIVE"  # "NATIVE", "OCR", "MERGED"
 
 
 class TableSchema(BaseModel):
@@ -106,3 +107,9 @@ class DocumentExtractionResult(BaseModel):
     extraction_version: str = "1.0.0"
     extraction_timestamp: str
     processing_time: float
+    ocr_status: Optional[str] = None
+    ocr_engine: Optional[str] = None
+    ocr_version: Optional[str] = None
+    ocr_confidence: Optional[float] = None
+    ocr_language: Optional[str] = None
+    ocr_processing_time: Optional[float] = None

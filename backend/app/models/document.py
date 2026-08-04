@@ -17,6 +17,14 @@ class Document(Base):
     extraction_timestamp = Column(String(64), nullable=False)
     processing_time = Column(Float, nullable=False)
 
+    # OCR Auditing Info
+    ocr_status = Column(String(32), nullable=True)  # "skipped", "completed", "failed"
+    ocr_engine = Column(String(64), nullable=True)
+    ocr_version = Column(String(32), nullable=True)
+    ocr_confidence = Column(Float, nullable=True)
+    ocr_language = Column(String(32), nullable=True)
+    ocr_processing_time = Column(Float, nullable=True)
+
     # Future-proofing flexible extensions column
     extra_metadata = Column(JSON, nullable=True)
 
@@ -100,6 +108,7 @@ class DocumentBlock(Base):
     bold = Column(Boolean, default=False)
     italic = Column(Boolean, default=False)
     confidence = Column(Float, default=1.0)
+    provenance = Column(String(32), default="NATIVE")  # "NATIVE", "OCR", "MERGED"
 
     # Hierarchy Relations
     parent_block_id = Column(String(36), nullable=True)

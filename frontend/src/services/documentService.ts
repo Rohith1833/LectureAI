@@ -20,6 +20,12 @@ export interface DocumentData {
   extraction_timestamp: string;
   processing_time: number;
   metadata: DocumentMetadata | null;
+  ocr_status?: string | null;
+  ocr_engine?: string | null;
+  ocr_version?: string | null;
+  ocr_confidence?: number | null;
+  ocr_language?: string | null;
+  ocr_processing_time?: number | null;
 }
 
 export interface DocumentResponse {
@@ -73,6 +79,7 @@ export interface BlockData {
   previous_block_id: string | null;
   next_block_id: string | null;
   heading_level: number | null;
+  provenance?: "NATIVE" | "OCR" | "MERGED";
 }
 
 export interface TableData {

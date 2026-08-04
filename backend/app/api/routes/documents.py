@@ -27,6 +27,12 @@ async def get_document_by_id(id: str, db: Session = Depends(get_db)):
             "extraction_version": doc.extraction_version,
             "extraction_timestamp": doc.extraction_timestamp,
             "processing_time": doc.processing_time,
+            "ocr_status": doc.ocr_status,
+            "ocr_engine": doc.ocr_engine,
+            "ocr_version": doc.ocr_version,
+            "ocr_confidence": doc.ocr_confidence,
+            "ocr_language": doc.ocr_language,
+            "ocr_processing_time": doc.ocr_processing_time,
             "metadata": {
                 "title": doc.metadata_rel.title if doc.metadata_rel else None,
                 "author": doc.metadata_rel.author if doc.metadata_rel else None,
@@ -62,6 +68,12 @@ async def get_document_by_upload_id(upload_id: str, db: Session = Depends(get_db
             "extraction_version": doc.extraction_version,
             "extraction_timestamp": doc.extraction_timestamp,
             "processing_time": doc.processing_time,
+            "ocr_status": doc.ocr_status,
+            "ocr_engine": doc.ocr_engine,
+            "ocr_version": doc.ocr_version,
+            "ocr_confidence": doc.ocr_confidence,
+            "ocr_language": doc.ocr_language,
+            "ocr_processing_time": doc.ocr_processing_time,
             "metadata": {
                 "title": doc.metadata_rel.title if doc.metadata_rel else None,
                 "author": doc.metadata_rel.author if doc.metadata_rel else None,
@@ -137,6 +149,7 @@ async def get_document_blocks(id: str, db: Session = Depends(get_db)):
             "previous_block_id": b.previous_block_id,
             "next_block_id": b.next_block_id,
             "heading_level": b.heading_level,
+            "provenance": b.provenance,
         }
         for b in sorted_blocks
     ]

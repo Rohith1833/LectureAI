@@ -28,6 +28,7 @@ export default function DocumentPreviewPage() {
   const [activeTab, setActiveTab] = useState<"metadata" | "blocks" | "tables" | "images">("metadata");
   const [selectedPageFilter, setSelectedPageFilter] = useState<number | null>(null);
   const [showRawJson, setShowRawJson] = useState<boolean>(false);
+  const [provenanceFilter, setProvenanceFilter] = useState<"ALL" | "NATIVE" | "OCR">("ALL");
 
   // 1. Fetch Document Base Metadata
   const docQuery = useQuery({
@@ -146,16 +147,45 @@ export default function DocumentPreviewPage() {
 
       {/* Audit Stats Banner */}
       {!showRawJson && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-xl border bg-muted/20 text-xs text-muted-foreground">
-          <div>
-            <strong>Extraction Engine:</strong> PyMuPDF v{doc.extraction_version}
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-xl border bg-muted/20 text-xs text-muted-foreground">
+            <div>
+              <strong>Extraction Engine:</strong> PyMuPDF v{doc.extraction_version}
+            </div>
+            <div>
+              <strong>Processing Duration:</strong> {doc.processing_time} seconds
+            </div>
+            <div>
+              <strong>Extracted On:</strong> {new Date(doc.extraction_timestamp).toLocaleString()}
+            </div>
           </div>
-          <div>
-            <strong>Processing Duration:</strong> {doc.processing_time} seconds
-          </div>
-          <div>
-            <strong>Extracted On:</strong> {new Date(doc.extraction_timestamp).toLocaleString()}
-          </div>
+
+          {doc.ocr_status && doc.ocr_status !== "skipped" && (
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 p-4 rounded-xl border border-violet-100 bg-violet-50/20 dark:border-violet-950 dark:bg-violet-950/10 text-xs">
+              <div>
+                <strong className="text-violet-600 dark:text-violet-400">OCR Status:</strong>{" "}
+                <span className="capitalize font-semibold text-foreground">{doc.ocr_status}</span>
+              </div>
+              <div>
+                <strong className="text-violet-600 dark:text-violet-400">OCR Engine:</strong>{" "}
+                <span className="text-foreground">{doc.ocr_engine} v{doc.ocr_version}</span>
+              </div>
+              <div>
+                <strong className="text-violet-600 dark:text-violet-400">Confidence:</strong>{" "}
+                <span className="text-foreground">
+                  {doc.ocr_confidence !== null ? `${Math.round(doc.ocr_confidence * 100)}%` : "N/A"}
+                </span>
+              </div>
+              <div>
+                <strong className="text-violet-600 dark:text-violet-400">Language:</strong>{" "}
+                <span className="text-foreground uppercase">{doc.ocr_language}</span>
+              </div>
+              <div>
+                <strong className="text-violet-600 dark:text-violet-400">OCR Duration:</strong>{" "}
+                <span className="text-foreground">{doc.ocr_processing_time}s</span>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -249,15 +279,49 @@ export default function DocumentPreviewPage() {
             {/* TAB CONTENT: Blocks */}
             {activeTab === "blocks" && (
               <div className="space-y-4">
-                {filteredBlocks.length === 0 ? (
-                  <div className="p-8 text-center border border-dashed rounded-xl text-muted-foreground text-xs">
-                    No text layout blocks found matching the selection.
+                {/* Provenance Filter buttons if OCR processed */}
+                {doc.ocr_status && doc.ocr_status !== "skipped" && (
+                  <div className="flex gap-2 p-1 rounded-lg border bg-muted/40 max-w-sm">
+                    {(["ALL", "NATIVE", "OCR"] as const).map((prov) => (
+                      <Button
+                        key={prov}
+                        variant={provenanceFilter === prov ? "secondary" : "ghost"}
+                        size="sm"
+                        onClick={() => setProvenanceFilter(prov)}
+                        className="flex-1 text-[10px] uppercase font-bold py-1 h-7 cursor-pointer"
+                      >
+                        {prov === "ALL" ? "All Layers" : prov === "NATIVE" ? "Native Layer" : "OCR Layer"}
+                      </Button>
+                    ))}
                   </div>
-                ) : (
-                  filteredBlocks.map((b) => (
+                )}
+
+                {(() => {
+                  const blocksToRender = filteredBlocks.filter((b) => {
+                    if (provenanceFilter === "ALL") return true;
+                    if (provenanceFilter === "NATIVE") return b.provenance === "NATIVE" || b.provenance === "MERGED";
+                    if (provenanceFilter === "OCR") return b.provenance === "OCR" || b.provenance === "MERGED";
+                    return true;
+                  });
+
+                  if (blocksToRender.length === 0) {
+                    return (
+                      <div className="p-8 text-center border border-dashed rounded-xl text-muted-foreground text-xs">
+                        No text layout blocks found matching the selection.
+                      </div>
+                    );
+                  }
+
+                  return blocksToRender.map((b) => (
                     <div
                       key={b.block_id}
-                      className="p-4 rounded-xl border bg-card/60 backdrop-blur-sm space-y-3 shadow-xs transition-hover hover:border-border/80"
+                      className={`p-4 rounded-xl border bg-card/60 backdrop-blur-sm space-y-3 shadow-xs transition-hover hover:border-border/80 ${
+                        b.provenance === "OCR"
+                          ? "border-emerald-100 dark:border-emerald-950/40 bg-emerald-50/5 dark:bg-emerald-950/2"
+                          : b.provenance === "MERGED"
+                          ? "border-amber-100 dark:border-amber-950/40 bg-amber-50/5 dark:bg-amber-950/2"
+                          : ""
+                      }`}
                     >
                       {/* Block metadata header */}
                       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/20 pb-2 text-[10px] text-muted-foreground">
@@ -265,6 +329,17 @@ export default function DocumentPreviewPage() {
                           <span className="px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-700 dark:text-violet-400 font-bold uppercase tracking-wider font-mono">
                             {b.block_type}
                           </span>
+                          {b.provenance && (
+                            <span className={`px-2 py-0.5 rounded-full border text-[9px] font-bold font-mono uppercase tracking-wider ${
+                              b.provenance === "NATIVE"
+                                ? "bg-blue-500/10 text-blue-700 border-blue-200 dark:text-blue-400 dark:border-blue-900"
+                                : b.provenance === "OCR"
+                                ? "bg-emerald-500/10 text-emerald-700 border-emerald-200 dark:text-emerald-400 dark:border-emerald-900"
+                                : "bg-amber-500/10 text-amber-700 border-amber-200 dark:text-amber-400 dark:border-amber-900"
+                            }`}>
+                              {b.provenance}
+                            </span>
+                          )}
                           {b.heading_level && (
                             <span className="px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-700 font-bold font-mono">
                               H{b.heading_level}
@@ -314,8 +389,8 @@ export default function DocumentPreviewPage() {
                         )}
                       </div>
                     </div>
-                  ))
-                )}
+                  ));
+                })()}
               </div>
             )}
 

@@ -7,3 +7,4 @@ loguru==0.7.3
 python-multipart==0.0.12
 pymupdf
 sqlalchemy
+pytesseract
