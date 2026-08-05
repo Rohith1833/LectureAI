@@ -33,6 +33,7 @@ class DocumentRepository:
             ocr_confidence=result.ocr_confidence,
             ocr_language=result.ocr_language,
             ocr_processing_time=result.ocr_processing_time,
+            extra_metadata=result.extra_metadata,
         )
         self.db.add(db_doc)
         self.db.flush()  # Populates db_doc.id

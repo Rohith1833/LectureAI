@@ -26,7 +26,23 @@ def run_document_agent(
             extraction_result, file_path, strategy=ocr_strategy
         )
 
-        # 3. Save result using normalized persistence repository
+        # 3. Run Deterministic Text Normalization Pipeline
+        from app.services.normalization.pipeline import NormalizationPipeline
+        from app.services.normalization.base import NormalizationContext, ImmutableMetadata
+        from app.core.config import settings
+
+        norm_pipeline = NormalizationPipeline.create_default_pipeline()
+        norm_meta = ImmutableMetadata(upload_id=upload_id)
+        norm_context = NormalizationContext(norm_meta, debug_mode=settings.DEBUG)
+
+        extraction_result, norm_report = norm_pipeline.execute(extraction_result, norm_context)
+
+        # Store the normalization report in document extra_metadata
+        if extraction_result.extra_metadata is None:
+            extraction_result.extra_metadata = {}
+        extraction_result.extra_metadata["normalization_report"] = norm_report.model_dump()
+
+        # 4. Save result using normalized persistence repository
         repo = DocumentRepository(db)
         db_doc = repo.save_extraction_result(extraction_result)
 

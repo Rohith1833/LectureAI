@@ -1,0 +1,92 @@
+{
+  "page_hash": "58bda1d04c30ac0887dbd197611f7e0c29d7a52d83658c373c688e6a0f436714",
+  "blocks": [
+    {
+      "block_id": "edbbfe61-42b7-4795-940c-a589b3cf58cd",
+      "page_number": 252,
+      "reading_order": 1,
+      "block_type": "UNKNOWN",
+      "bounding_box": {
+        "x0": 378.5855351698359,
+        "y0": 655.9083379924332,
+        "x1": 431.5034349257764,
+        "y1": 662.7713549818907
+      },
+      "text": "Buysay sammyos",
+      "font_size": 6.005139865775267,
+      "font_family": "OCR-Tesseract",
+      "bold": false,
+      "italic": false,
+      "confidence": 0.15,
+      "parent_block_id": null,
+      "previous_block_id": null,
+      "next_block_id": null,
+      "heading_level": null,
+      "extra_metadata": {
+        "classification_reasoning": {
+          "size_score": -0.75,
+          "bold_score": -0.5,
+          "length_score": 0.64,
+          "case_score": 0.18,
+          "punctuation_score": 0.36,
+          "numbering_score": 0.0,
+          "spacing_score": 0.0,
+          "neighbor_score": 0.0,
+          "net_score": -0.07,
+          "dominant_size": 6.01,
+          "dominant_family": "OCR-Tesseract"
+        }
+      },
+      "provenance": "OCR"
+    },
+    {
+      "block_id": "07fd6d6b-0deb-49d0-bb54-2d9a1e46888c",
+      "page_number": 252,
+      "reading_order": 2,
+      "block_type": "HEADING",
+      "bounding_box": {
+        "x0": 260.8803001986786,
+        "y0": 626.9856235368626,
+        "x1": 282.6409318740186,
+        "y1": 635.0741792744374
+      },
+      "text": "OtON",
+      "font_size": 8.088555737574849,
+      "font_family": "OCR-Tesseract",
+      "bold": false,
+      "italic": false,
+      "confidence": 0.0,
+      "parent_block_id": null,
+      "previous_block_id": null,
+      "next_block_id": null,
+      "heading_level": 1,
+      "extra_metadata": {
+        "classification_reasoning": {
+          "size_score": 0.9,
+          "bold_score": -0.5,
+          "length_score": 0.64,
+          "case_score": 0.18,
+          "punctuation_score": 0.36,
+          "numbering_score": 0.0,
+          "spacing_score": 0.0,
+          "neighbor_score": 0.5,
+          "net_score": 2.08,
+          "dominant_size": 6.01,
+          "dominant_family": "OCR-Tesseract"
+        }
+      },
+      "provenance": "OCR"
+    }
+  ],
+  "confidence_stats": {
+    "page_number": 252,
+    "word_count": 3,
+    "average_word_confidence": 0.207,
+    "min_word_confidence": 0.0,
+    "confidence_distribution": {
+      "low_less_than_60": 2,
+      "medium_60_to_85": 1,
+      "high_greater_than_85": 0
+    }
+  }
+}

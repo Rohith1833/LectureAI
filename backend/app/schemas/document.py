@@ -113,3 +113,4 @@ class DocumentExtractionResult(BaseModel):
     ocr_confidence: Optional[float] = None
     ocr_language: Optional[str] = None
     ocr_processing_time: Optional[float] = None
+    extra_metadata: Optional[dict] = None

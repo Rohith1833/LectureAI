@@ -278,6 +278,161 @@ class TestNormalizationArchitecture(unittest.TestCase):
         ]
         self.assertEqual(hook.log, expected_sequence)
 
+    def test_unicode_normalizer_behavior(self):
+        """Verify typographic character replacements and mappings in UnicodeNormalizer."""
+        from app.services.normalization.unicode_normalizer import UnicodeNormalizer
+        normalizer = UnicodeNormalizer()
+        
+        meta = ImmutableMetadata(upload_id="u123")
+        context = NormalizationContext(meta, debug_mode=True)
+        
+        input_blocks = [
+            BlockSchema(
+                block_id="b1",
+                page_number=1,
+                reading_order=1,
+                block_type=BlockType.PARAGRAPH,
+                text="ﬁrst ﬂight and the “smart quotes” – en-dash — em-dash … ellipsis",
+                bounding_box=BoundingBox(x0=0, y0=0, x1=10, y1=10),
+            )
+        ]
+        doc = self.doc.model_copy()
+        doc.blocks = input_blocks
+        
+        result = normalizer.run(doc, context)
+        expected = 'first flight and the "smart quotes" - en-dash - em-dash ... ellipsis'
+        self.assertEqual(result.document.blocks[0].text, expected)
+        self.assertEqual(result.metrics.modified_blocks_count, 1)
+        self.assertEqual(len(result.transformations), 1)
+
+    def test_control_character_normalizer_behavior(self):
+        """Verify removal of control and formatting characters except safe spacing."""
+        from app.services.normalization.control_character_normalizer import ControlCharacterNormalizer
+        normalizer = ControlCharacterNormalizer()
+        
+        meta = ImmutableMetadata(upload_id="u123")
+        context = NormalizationContext(meta, debug_mode=True)
+        
+        input_blocks = [
+            BlockSchema(
+                block_id="b1",
+                page_number=1,
+                reading_order=1,
+                block_type=BlockType.PARAGRAPH,
+                text="Line1\nLine2\u200b\x00Text",
+                bounding_box=BoundingBox(x0=0, y0=0, x1=10, y1=10),
+            )
+        ]
+        doc = self.doc.model_copy()
+        doc.blocks = input_blocks
+        
+        result = normalizer.run(doc, context)
+        self.assertEqual(result.document.blocks[0].text, "Line1\nLine2Text")
+        self.assertEqual(result.metrics.modified_blocks_count, 1)
+
+    def test_whitespace_normalizer_behavior(self):
+        """Verify tab replacements, space collapsing, line trimming, and blank line limits."""
+        from app.services.normalization.whitespace_normalizer import WhitespaceNormalizer
+        normalizer = WhitespaceNormalizer()
+        
+        meta = ImmutableMetadata(upload_id="u123")
+        context = NormalizationContext(meta, debug_mode=True)
+        
+        input_blocks = [
+            BlockSchema(
+                block_id="b1",
+                page_number=1,
+                reading_order=1,
+                block_type=BlockType.PARAGRAPH,
+                text="  TrimMe  \n\n\n\tTabbed   Spaces   \n\n\nLine",
+                bounding_box=BoundingBox(x0=0, y0=0, x1=10, y1=10),
+            )
+        ]
+        doc = self.doc.model_copy()
+        doc.blocks = input_blocks
+        
+        result = normalizer.run(doc, context)
+        expected = "TrimMe\n\nTabbed Spaces\n\nLine"
+        self.assertEqual(result.document.blocks[0].text, expected)
+
+    def test_empty_block_normalizer_behavior(self):
+        """Verify empty and whitespace-only blocks are deleted from document."""
+        from app.services.normalization.empty_block_normalizer import EmptyBlockNormalizer
+        normalizer = EmptyBlockNormalizer()
+        
+        meta = ImmutableMetadata(upload_id="u123")
+        context = NormalizationContext(meta, debug_mode=True)
+        
+        input_blocks = [
+            BlockSchema(
+                block_id="b1",
+                page_number=1,
+                reading_order=1,
+                block_type=BlockType.PARAGRAPH,
+                text="Good text",
+                bounding_box=BoundingBox(x0=0, y0=0, x1=10, y1=10),
+            ),
+            BlockSchema(
+                block_id="b2",
+                page_number=1,
+                reading_order=2,
+                block_type=BlockType.PARAGRAPH,
+                text="   \n \t ",
+                bounding_box=BoundingBox(x0=0, y0=0, x1=10, y1=10),
+            ),
+        ]
+        doc = self.doc.model_copy()
+        doc.blocks = input_blocks
+        
+        result = normalizer.run(doc, context)
+        self.assertEqual(len(result.document.blocks), 1)
+        self.assertEqual(result.document.blocks[0].block_id, "b1")
+        self.assertEqual(result.metrics.removed_blocks_count, 1)
+
+    def test_default_pipeline_execution_and_idempotency(self):
+        """Test default pipeline executes all normalizers in order and is fully idempotent."""
+        pipeline = NormalizationPipeline.create_default_pipeline()
+        self.assertEqual(len(pipeline.steps), 4)
+        
+        input_blocks = [
+            BlockSchema(
+                block_id="b1",
+                page_number=1,
+                reading_order=1,
+                block_type=BlockType.PARAGRAPH,
+                text="ﬁrst\tﬂight “smart”\n\n\n\u200bLine",
+                bounding_box=BoundingBox(x0=0, y0=0, x1=10, y1=10),
+            ),
+            BlockSchema(
+                block_id="b2",
+                page_number=1,
+                reading_order=2,
+                block_type=BlockType.PARAGRAPH,
+                text="  \u200b  ",
+                bounding_box=BoundingBox(x0=0, y0=0, x1=10, y1=10),
+            ),
+        ]
+        doc = self.doc.model_copy()
+        doc.blocks = input_blocks
+        
+        meta = ImmutableMetadata(upload_id="u123")
+        context1 = NormalizationContext(meta, debug_mode=True)
+        
+        # First Run
+        res_doc1, report1 = pipeline.execute(doc, context1)
+        
+        # Assertions
+        self.assertEqual(len(res_doc1.blocks), 1)
+        expected = 'first flight "smart"\n\nLine'
+        self.assertEqual(res_doc1.blocks[0].text, expected)
+        
+        # Second Run (Idempotency)
+        context2 = NormalizationContext(meta, debug_mode=True)
+        res_doc2, report2 = pipeline.execute(res_doc1, context2)
+        
+        self.assertEqual(res_doc2.blocks[0].text, expected)
+        self.assertEqual(report2.total_transformations, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

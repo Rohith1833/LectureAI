@@ -20,6 +20,21 @@ class NormalizationPipeline:
         self.steps: List[BaseNormalizer] = []
         self.hooks: List[PipelineLifecycleHook] = []
 
+    @classmethod
+    def create_default_pipeline(cls) -> "NormalizationPipeline":
+        """Instantiate and configure the pipeline with default text normalizers in order."""
+        pipeline = cls()
+        from app.services.normalization.unicode_normalizer import UnicodeNormalizer
+        from app.services.normalization.control_character_normalizer import ControlCharacterNormalizer
+        from app.services.normalization.whitespace_normalizer import WhitespaceNormalizer
+        from app.services.normalization.empty_block_normalizer import EmptyBlockNormalizer
+
+        pipeline.register_step(UnicodeNormalizer())
+        pipeline.register_step(ControlCharacterNormalizer())
+        pipeline.register_step(WhitespaceNormalizer())
+        pipeline.register_step(EmptyBlockNormalizer())
+        return pipeline
+
     def register_step(self, step: BaseNormalizer) -> None:
         """Add a normalization stage to the execution pipeline sequence."""
         self.steps.append(step)
