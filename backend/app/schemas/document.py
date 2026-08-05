@@ -16,6 +16,7 @@ class BlockType(str, Enum):
     HEADER = "HEADER"
     FOOTER = "FOOTER"
     FOOTNOTE = "FOOTNOTE"
+    PAGE_NUMBER = "PAGE_NUMBER"
     UNKNOWN = "UNKNOWN"
 
 

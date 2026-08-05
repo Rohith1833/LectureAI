@@ -27,11 +27,17 @@ class NormalizationPipeline:
         from app.services.normalization.unicode_normalizer import UnicodeNormalizer
         from app.services.normalization.control_character_normalizer import ControlCharacterNormalizer
         from app.services.normalization.whitespace_normalizer import WhitespaceNormalizer
+        from app.services.normalization.hyphenation_normalizer import HyphenationNormalizer
+        from app.services.normalization.paragraph_normalizer import ParagraphNormalizer
+        from app.services.normalization.header_footer_normalizer import HeaderFooterNormalizer
         from app.services.normalization.empty_block_normalizer import EmptyBlockNormalizer
 
         pipeline.register_step(UnicodeNormalizer())
         pipeline.register_step(ControlCharacterNormalizer())
         pipeline.register_step(WhitespaceNormalizer())
+        pipeline.register_step(HyphenationNormalizer())
+        pipeline.register_step(ParagraphNormalizer())
+        pipeline.register_step(HeaderFooterNormalizer())
         pipeline.register_step(EmptyBlockNormalizer())
         return pipeline
 

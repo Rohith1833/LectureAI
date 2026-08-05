@@ -17,6 +17,16 @@ class Settings(BaseSettings):
     API_VERSION: str = "v1"
     DATABASE_URL: str = "sqlite:///./lectureai.db"
 
+    # Document Normalization Pipeline Thresholds
+    MAX_VERTICAL_GAP: float = 15.0
+    INDENT_TOLERANCE: float = 5.0
+    MERGE_SIMILARITY: float = 0.8
+    HEADER_REPETITION_THRESHOLD: int = 2
+    FOOTER_REPETITION_THRESHOLD: int = 2
+    CROSS_PAGE_MERGE_ENABLED: bool = True
+    HYPHEN_MERGE_ENABLED: bool = True
+    HEADER_FOOTER_MODE: str = "remove"  # "remove" or "classify"
+
     @property
     def api_prefix(self) -> str:
         """Return the versioned API prefix."""

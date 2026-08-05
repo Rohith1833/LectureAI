@@ -390,9 +390,9 @@ class TestNormalizationArchitecture(unittest.TestCase):
         self.assertEqual(result.metrics.removed_blocks_count, 1)
 
     def test_default_pipeline_execution_and_idempotency(self):
-        """Test default pipeline executes all normalizers in order and is fully idempotent."""
+        """Test default pipeline executes all 7 normalizers in order and is fully idempotent."""
         pipeline = NormalizationPipeline.create_default_pipeline()
-        self.assertEqual(len(pipeline.steps), 4)
+        self.assertEqual(len(pipeline.steps), 7)
         
         input_blocks = [
             BlockSchema(
@@ -422,6 +422,7 @@ class TestNormalizationArchitecture(unittest.TestCase):
         res_doc1, report1 = pipeline.execute(doc, context1)
         
         # Assertions
+        # b2 deleted, text normalized
         self.assertEqual(len(res_doc1.blocks), 1)
         expected = 'first flight "smart"\n\nLine'
         self.assertEqual(res_doc1.blocks[0].text, expected)
@@ -432,6 +433,236 @@ class TestNormalizationArchitecture(unittest.TestCase):
         
         self.assertEqual(res_doc2.blocks[0].text, expected)
         self.assertEqual(report2.total_transformations, 0)
+
+    def test_paragraph_normalizer_behavior(self):
+        """Verify ParagraphNormalizer merges broken paragraphs and soft line breaks."""
+        from app.services.normalization.paragraph_normalizer import ParagraphNormalizer
+        normalizer = ParagraphNormalizer()
+        
+        meta = ImmutableMetadata(upload_id="u123")
+        context = NormalizationContext(meta, debug_mode=True)
+        
+        # Scenario: two paragraph blocks split by layout lines on same page
+        # same font, sequential reading order, first ends lowercase continuation
+        input_blocks = [
+            BlockSchema(
+                block_id="b1",
+                page_number=1,
+                reading_order=1,
+                block_type=BlockType.PARAGRAPH,
+                font_family="Times",
+                font_size=12.0,
+                text="This book explains software\ntesting principles used",
+                bounding_box=BoundingBox(x0=50.0, y0=100.0, x1=300.0, y1=120.0),
+            ),
+            BlockSchema(
+                block_id="b2",
+                page_number=1,
+                reading_order=2,
+                block_type=BlockType.PARAGRAPH,
+                font_family="Times",
+                font_size=12.0,
+                text="in industry.",
+                bounding_box=BoundingBox(x0=50.0, y0=125.0, x1=200.0, y1=140.0),
+            ),
+        ]
+        doc = self.doc.model_copy()
+        doc.blocks = input_blocks
+        
+        result = normalizer.run(doc, context)
+        # Expected: single paragraph block with soft breaks cleaned:
+        # "This book explains software testing principles used in industry."
+        self.assertEqual(len(result.document.blocks), 1)
+        expected_text = "This book explains software testing principles used in industry."
+        self.assertEqual(result.document.blocks[0].text, expected_text)
+        self.assertEqual(result.metrics.merged_blocks_count, 1)
+
+    def test_cross_page_continuation(self):
+        """Verify ParagraphNormalizer merges paragraph wrappers across page transitions."""
+        from app.services.normalization.paragraph_normalizer import ParagraphNormalizer
+        normalizer = ParagraphNormalizer()
+        
+        meta = ImmutableMetadata(upload_id="u123")
+        context = NormalizationContext(meta, debug_mode=True)
+        
+        input_blocks = [
+            BlockSchema(
+                block_id="b1",
+                page_number=1,
+                reading_order=1,
+                block_type=BlockType.PARAGRAPH,
+                font_family="Times",
+                font_size=12.0,
+                text="The objective of software",
+                bounding_box=BoundingBox(x0=50.0, y0=800.0, x1=300.0, y1=820.0),
+            ),
+            BlockSchema(
+                block_id="b2",
+                page_number=2,
+                reading_order=1,
+                block_type=BlockType.PARAGRAPH,
+                font_family="Times",
+                font_size=12.0,
+                text="testing is to verify code correctness.",
+                bounding_box=BoundingBox(x0=50.0, y0=50.0, x1=300.0, y1=70.0),
+            ),
+        ]
+        doc = self.doc.model_copy()
+        doc.blocks = input_blocks
+        
+        result = normalizer.run(doc, context)
+        self.assertEqual(len(result.document.blocks), 1)
+        expected_text = "The objective of software testing is to verify code correctness."
+        self.assertEqual(result.document.blocks[0].text, expected_text)
+
+    def test_hyphenation_normalizer_behavior(self):
+        """Verify hyphenation repairs within-block and cross-block splits."""
+        from app.services.normalization.hyphenation_normalizer import HyphenationNormalizer
+        normalizer = HyphenationNormalizer()
+        
+        meta = ImmutableMetadata(upload_id="u123")
+        context = NormalizationContext(meta, debug_mode=True)
+        
+        input_blocks = [
+            # Within-block: "informa-\ntion" -> "information"
+            BlockSchema(
+                block_id="b1",
+                page_number=1,
+                reading_order=1,
+                block_type=BlockType.PARAGRAPH,
+                text="We need to extract informa-\ntion from this.",
+                bounding_box=BoundingBox(x0=50.0, y0=100.0, x1=300.0, y1=120.0),
+            ),
+            # Cross-block: ends with hyphen, next block starts with lowercase
+            BlockSchema(
+                block_id="b2",
+                page_number=1,
+                reading_order=2,
+                block_type=BlockType.PARAGRAPH,
+                font_family="Times",
+                font_size=12.0,
+                text="This is real-time processing and it is dec-",
+                bounding_box=BoundingBox(x0=50.0, y0=140.0, x1=300.0, y1=160.0),
+            ),
+            BlockSchema(
+                block_id="b3",
+                page_number=1,
+                reading_order=3,
+                block_type=BlockType.PARAGRAPH,
+                font_family="Times",
+                font_size=12.0,
+                text="larative layout.",
+                bounding_box=BoundingBox(x0=50.0, y0=165.0, x1=200.0, y1=180.0),
+            ),
+        ]
+        doc = self.doc.model_copy()
+        doc.blocks = input_blocks
+        
+        result = normalizer.run(doc, context)
+        # Expected: b1 within-block repaired, b2 and b3 cross-block merged.
+        # Note: "real-time" on same line must stay untouched.
+        self.assertEqual(len(result.document.blocks), 2)
+        self.assertEqual(result.document.blocks[0].text, "We need to extract information from this.")
+        self.assertEqual(result.document.blocks[1].text, "This is real-time processing and it is declarative layout.")
+        self.assertEqual(result.metrics.removed_blocks_count, 1)
+
+    def test_header_footer_normalizer_behavior(self):
+        """Verify running header/footer and page number repetition and classification logic."""
+        from app.services.normalization.header_footer_normalizer import HeaderFooterNormalizer
+        normalizer = HeaderFooterNormalizer()
+        
+        # Test pages sizes
+        pages = [
+            PageSchema(page_number=1, width=600.0, height=800.0),
+            PageSchema(page_number=2, width=600.0, height=800.0),
+        ]
+        
+        # Setup blocks:
+        # - "Chapter 1" (header candidate, but ONLY on page 1 -> Chapter heading protection check!)
+        # - "LectureAI Book" (static header, appears at y1=50 on Page 1 and Page 2)
+        # - "Page 1" and "Page 2" (page number candidate at bottom margin y0=760)
+        input_blocks = [
+            BlockSchema(
+                block_id="b1",
+                page_number=1,
+                reading_order=1,
+                block_type=BlockType.PARAGRAPH,
+                font_family="Times",
+                font_size=10.0,
+                text="Chapter 1 Introduction",
+                bounding_box=BoundingBox(x0=50.0, y0=30.0, x1=200.0, y1=45.0), # top 20%
+            ),
+            BlockSchema(
+                block_id="b2",
+                page_number=1,
+                reading_order=2,
+                block_type=BlockType.PARAGRAPH,
+                font_family="Times",
+                font_size=10.0,
+                text="LectureAI Book",
+                bounding_box=BoundingBox(x0=400.0, y0=30.0, x1=550.0, y1=45.0), # top 20%
+            ),
+            BlockSchema(
+                block_id="b3",
+                page_number=1,
+                reading_order=3,
+                block_type=BlockType.PARAGRAPH,
+                text="1",
+                bounding_box=BoundingBox(x0=300.0, y0=770.0, x1=310.0, y1=785.0), # bottom 20%
+            ),
+            BlockSchema(
+                block_id="b4",
+                page_number=2,
+                reading_order=1,
+                block_type=BlockType.PARAGRAPH,
+                font_family="Times",
+                font_size=10.0,
+                text="LectureAI Book",
+                bounding_box=BoundingBox(x0=400.0, y0=30.0, x1=550.0, y1=45.0), # top 20%
+            ),
+            BlockSchema(
+                block_id="b5",
+                page_number=2,
+                reading_order=2,
+                block_type=BlockType.PARAGRAPH,
+                text="2",
+                bounding_box=BoundingBox(x0=300.0, y0=770.0, x1=310.0, y1=785.0), # bottom 20%
+            ),
+        ]
+        doc = self.doc.model_copy()
+        doc.pages = pages
+        doc.blocks = input_blocks
+        
+        # Test Mode: Remove (Default)
+        meta = ImmutableMetadata(upload_id="u123")
+        context_remove = NormalizationContext(meta, debug_mode=True)
+        res_remove = normalizer.run(doc, context_remove)
+        
+        # Expected: "Chapter 1 Introduction" remains (protected).
+        # "LectureAI Book" removed on both pages (repeated header).
+        # Page numbers "1" and "2" removed on both pages.
+        self.assertEqual(len(res_remove.document.blocks), 1)
+        self.assertEqual(res_remove.document.blocks[0].text, "Chapter 1 Introduction")
+        self.assertEqual(res_remove.metrics.removed_blocks_count, 4)
+        
+        # Test Mode: Classify
+        from app.core.config import settings
+        old_mode = settings.HEADER_FOOTER_MODE
+        try:
+            settings.HEADER_FOOTER_MODE = "classify"
+            context_classify = NormalizationContext(meta, debug_mode=True)
+            res_classify = normalizer.run(doc, context_classify)
+            
+            # All blocks retained, but b2/b4 classified as HEADER, b3/b5 as PAGE_NUMBER
+            blocks_out = res_classify.document.blocks
+            self.assertEqual(len(blocks_out), 5)
+            self.assertEqual(blocks_out[0].block_type, BlockType.PARAGRAPH) # protected chapter heading
+            self.assertEqual(blocks_out[1].block_type, BlockType.HEADER) # LectureAI Book
+            self.assertEqual(blocks_out[2].block_type, BlockType.PAGE_NUMBER) # 1
+            self.assertEqual(blocks_out[3].block_type, BlockType.HEADER) # LectureAI Book
+            self.assertEqual(blocks_out[4].block_type, BlockType.PAGE_NUMBER) # 2
+        finally:
+            settings.HEADER_FOOTER_MODE = old_mode
 
 
 if __name__ == "__main__":
