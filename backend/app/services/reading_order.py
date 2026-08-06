@@ -13,6 +13,10 @@ def sort_and_link_blocks(
     if not raw_blocks:
         return []
 
+    # Record original parser extraction order
+    for orig_idx, rb in enumerate(raw_blocks):
+        rb["original_parser_order"] = orig_idx
+
     # 1. Classify blocks into layout structures (Headers, Footers, and Body)
     headers = []
     footers = []
@@ -163,7 +167,10 @@ def sort_and_link_blocks(
             previous_block_id=None,  # will link below
             next_block_id=None,  # will link below
             heading_level=heading_lvl,
-            extra_metadata=rb.get("extra_metadata"),
+            extra_metadata={
+                **(rb.get("extra_metadata") or {}),
+                "original_parser_order": rb.get("original_parser_order", idx)
+            },
         )
         schemas.append(block)
 
