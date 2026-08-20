@@ -277,6 +277,23 @@ class IntelligenceEngine:
             quality_warnings = doc_q_anno.metadata.get("warnings", [])
             processing_recommendations = doc_q_anno.metadata.get("recommendations", [])
 
+        # Academic Quality annotation (from academic quality validation step)
+        academic_quality_score = None
+        academic_coverage_score = None
+        academic_density_score = None
+        academic_orphan_count = None
+        academic_warnings = []
+        academic_recommendations = []
+
+        acad_q_anno = next((q for q in quality_annos if q.provenance == "ACADEMIC_QUALITY_MODULE"), None)
+        if acad_q_anno:
+            academic_quality_score = acad_q_anno.confidence.score
+            academic_coverage_score = acad_q_anno.confidence.contributors.get("coverage")
+            academic_density_score = acad_q_anno.confidence.contributors.get("density")
+            academic_orphan_count = acad_q_anno.metadata.get("orphan_count")
+            academic_warnings = acad_q_anno.metadata.get("warnings", [])
+            academic_recommendations = acad_q_anno.metadata.get("recommendations", [])
+
         hierarchy_annos = context.annotation_store.find_by_type(HierarchyAnnotation)
         if hierarchy_annos:
             from app.schemas.document import BlockType
@@ -322,6 +339,12 @@ class IntelligenceEngine:
             overall_quality_score=overall_quality_score,
             quality_warnings=quality_warnings,
             processing_recommendations=processing_recommendations,
+            academic_quality_score=academic_quality_score,
+            academic_coverage_score=academic_coverage_score,
+            academic_density_score=academic_density_score,
+            academic_orphan_count=academic_orphan_count,
+            academic_warnings=academic_warnings,
+            academic_recommendations=academic_recommendations,
         )
 
         return context, report

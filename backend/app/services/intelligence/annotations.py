@@ -65,3 +65,11 @@ class LayoutAnnotation(BaseAnnotation):
     x1: float
     y1: float
     columns_detected: int = 1
+
+
+class AcademicAnnotation(BaseAnnotation):
+    """Represents an identified academic structure in the document."""
+    academic_type: str            # e.g., "DEFINITION", "THEOREM", "LEARNING_OBJECTIVE"
+    concept_labels: List[str] = Field(default_factory=list)
+    evidence: Dict[str, Any] = Field(default_factory=dict)
+    reasoning: str = ""

@@ -103,6 +103,20 @@ from app.services.intelligence.hierarchy_validator import (
 from app.services.intelligence.quality import (
     DocumentQualityModule,
 )
+from app.services.intelligence.academic_features import (
+    AcademicFeatureEngine,
+)
+from app.services.intelligence.classifiers import (
+    CurriculumClassificationModule,
+    ExpositoryClassificationModule,
+    PedagogicalClassificationModule,
+)
+from app.services.intelligence.academic_graph_builder import (
+    AcademicGraphBuilderModule,
+)
+from app.services.intelligence.academic_quality import (
+    AcademicQualityModule,
+)
 from app.services.intelligence.engine import (
     DependencyResolver,
     IntelligenceEngine,
@@ -178,4 +192,10 @@ __all__ = [
     "HierarchyBuilderModule",
     "HierarchyValidationModule",
     "DocumentQualityModule",
+    "AcademicFeatureEngine",
+    "CurriculumClassificationModule",
+    "ExpositoryClassificationModule",
+    "PedagogicalClassificationModule",
+    "AcademicGraphBuilderModule",
+    "AcademicQualityModule",
 ]

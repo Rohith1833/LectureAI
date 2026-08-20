@@ -37,3 +37,11 @@ class IntelligenceReport(BaseModel):
     overall_quality_score: Optional[float] = None
     quality_warnings: List[dict] = Field(default_factory=list)
     processing_recommendations: List[dict] = Field(default_factory=list)
+
+    # Academic Quality Metrics
+    academic_quality_score: Optional[float] = None
+    academic_coverage_score: Optional[float] = None
+    academic_density_score: Optional[float] = None
+    academic_orphan_count: Optional[int] = None
+    academic_warnings: List[dict] = Field(default_factory=list)
+    academic_recommendations: List[dict] = Field(default_factory=list)
