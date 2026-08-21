@@ -13,4 +13,10 @@ from app.models.review import (
     AcademicReviewRevision,
     AcademicGraphSnapshot,
 )
+from app.models.knowledge import (
+    KnowledgeVersion,
+    KnowledgeEntity,
+    KnowledgeRelationship,
+    KnowledgeEvidence,
+)
 

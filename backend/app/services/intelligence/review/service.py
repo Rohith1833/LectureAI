@@ -215,6 +215,7 @@ class AcademicReviewService:
 
         return {
             "upload_id": upload_id,
+            "document_id": doc_model.id if doc_model else None,
             "document_review_state": doc_state.value,
             "base_graph_fingerprint": result.base_graph_fingerprint,
             "resolved_graph_fingerprint": result.resolved_graph_fingerprint,

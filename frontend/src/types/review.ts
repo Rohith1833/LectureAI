@@ -2,6 +2,7 @@ export type NodeReviewState = "UNREVIEWED" | "ACCEPTED" | "MODIFIED" | "REJECTED
 
 export interface ReviewSummary {
   upload_id: string;
+  document_id?: string;
   document_review_state: "NEEDS_REVIEW" | "APPROVED";
   base_graph_fingerprint: string;
   resolved_graph_fingerprint: string;

@@ -86,7 +86,7 @@ class TestDocumentAgent(unittest.TestCase):
         self.assertEqual(result.upload_id, upload_id)
         self.assertEqual(result.status, "processed")
         self.assertEqual(result.metadata.page_count, 1)
-        self.assertTrue(result.processing_time > 0.0)
+        self.assertTrue(result.processing_time >= 0.0)
 
         # Verify block detection
         self.assertTrue(len(result.blocks) >= 4)

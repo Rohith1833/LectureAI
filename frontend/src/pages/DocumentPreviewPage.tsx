@@ -125,7 +125,13 @@ export default function DocumentPreviewPage() {
         </div>
 
         {/* Actions & Raw JSON toggle */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={() => navigate(`/documents/${doc.id}/knowledge`)}
+            className="gap-1.5 cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-3 py-1.5 text-xs font-semibold"
+          >
+            Knowledge Explorer
+          </Button>
           <Button
             onClick={() => navigate(`/academic/review/${doc.upload_id}`)}
             className="gap-1.5 cursor-pointer bg-violet-600 hover:bg-violet-700 text-white rounded-lg px-3 py-1.5 text-xs font-semibold"

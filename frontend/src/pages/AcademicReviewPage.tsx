@@ -456,7 +456,7 @@ export default function AcademicReviewPage() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => navigate(`/documents/${summary.upload_id}`)}
+            onClick={() => navigate(`/documents/${summary?.document_id || summary?.upload_id}`)}
             className="pl-0 gap-1.5 text-muted-foreground hover:text-foreground cursor-pointer"
           >
             <ArrowLeft className="size-4" /> Back to Document Details
