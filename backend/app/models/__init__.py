@@ -7,3 +7,10 @@ from app.models.document import (
     DocumentTable,
     DocumentImage,
 )
+from app.models.review import (
+    AcademicOverride,
+    AcademicAuditEntry,
+    AcademicReviewRevision,
+    AcademicGraphSnapshot,
+)
+

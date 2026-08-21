@@ -117,6 +117,19 @@ from app.services.intelligence.academic_graph_builder import (
 from app.services.intelligence.academic_quality import (
     AcademicQualityModule,
 )
+from app.schemas.review import (
+    NodeReviewState,
+    DocumentReviewState,
+    PipelineRunReference,
+    AcademicGraphVersion,
+    ReconciliationStatus,
+    ResolvedGraphResult,
+)
+from app.services.intelligence.review import (
+    AnchorCollisionError,
+    AcademicOverlayService,
+    AcademicReviewService,
+)
 from app.services.intelligence.engine import (
     DependencyResolver,
     IntelligenceEngine,
@@ -198,4 +211,13 @@ __all__ = [
     "PedagogicalClassificationModule",
     "AcademicGraphBuilderModule",
     "AcademicQualityModule",
+    "NodeReviewState",
+    "DocumentReviewState",
+    "PipelineRunReference",
+    "AcademicGraphVersion",
+    "AnchorCollisionError",
+    "ReconciliationStatus",
+    "ResolvedGraphResult",
+    "AcademicOverlayService",
+    "AcademicReviewService",
 ]

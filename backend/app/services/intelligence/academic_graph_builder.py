@@ -65,9 +65,31 @@ class AcademicGraphBuilderModule(BaseIntelligenceModule):
         nodes: List[AcademicNode] = []
         edges: List[AcademicEdge] = []
 
-        # 1. Create AcademicNodes mapping target block references
+        # 1. Resolve stable Contextual Anchor Keys
+        from app.services.intelligence.review.identity import resolve_anchor_keys_for_nodes
+        
+        nodes_data = []
+        for anno in annos:
+            category = AcademicNodeCategory(anno.academic_type)
+            target_block = next((b for b in doc.blocks if b.block_id == anno.target_id), None)
+            text = target_block.text if target_block else ""
+            nodes_data.append((anno.target_id, text, category))
+
+        anchor_map, diagnostics = resolve_anchor_keys_for_nodes(doc.upload_id, nodes_data, doc_graph)
+
+        # Log collision diagnostics
+        if diagnostics:
+            context.shared_cache["academic_graph_collisions"] = diagnostics
+            for diag in diagnostics:
+                context.diagnostics.append({
+                    "module": self.metadata.name,
+                    "warning": f"[ANCHOR_KEY_COLLISION_DETECTED] Anchor key '{diag['anchor_key']}' collided between blocks {[c['block_id'] for c in diag['conflicts']]}."
+                })
+
+        # 2. Create AcademicNodes mapping target block references
         # Map block_id to academic_node_id
         block_to_node_map: Dict[str, str] = {}
+        from app.schemas.review import NodeReviewState
 
         for anno in annos:
             category = AcademicNodeCategory(anno.academic_type)
@@ -83,6 +105,8 @@ class AcademicGraphBuilderModule(BaseIntelligenceModule):
                     category=category,
                     title=title,
                     target_block_id=anno.target_id,
+                    anchor_key=anchor_map.get(anno.target_id),
+                    review_state=NodeReviewState.UNREVIEWED,
                     metadata={"provenance": anno.provenance}
                 )
             )

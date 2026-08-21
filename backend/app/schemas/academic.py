@@ -24,12 +24,17 @@ class AcademicNodeCategory(str, Enum):
     APPENDIX = "APPENDIX"
 
 
+from app.schemas.review import NodeReviewState
+
+
 class AcademicNode(BaseModel):
     """Represents a node in the logical academic hierarchy and concept graph."""
     node_id: str
     category: AcademicNodeCategory
     title: str
     target_block_id: Optional[str] = None  # Reference to DocumentGraph BlockSchema block_id
+    anchor_key: Optional[str] = None
+    review_state: NodeReviewState = NodeReviewState.UNREVIEWED
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 

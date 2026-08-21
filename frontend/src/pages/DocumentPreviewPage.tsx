@@ -124,8 +124,14 @@ export default function DocumentPreviewPage() {
           </p>
         </div>
 
-        {/* Raw JSON toggle */}
-        <div className="flex items-center gap-2">
+        {/* Actions & Raw JSON toggle */}
+        <div className="flex items-center gap-4">
+          <Button
+            onClick={() => navigate(`/academic/review/${doc.upload_id}`)}
+            className="gap-1.5 cursor-pointer bg-violet-600 hover:bg-violet-700 text-white rounded-lg px-3 py-1.5 text-xs font-semibold"
+          >
+            Academic Review
+          </Button>
           <Switch
             checked={showRawJson}
             onCheckedChange={setShowRawJson}
@@ -173,7 +179,7 @@ export default function DocumentPreviewPage() {
               <div>
                 <strong className="text-violet-600 dark:text-violet-400">Confidence:</strong>{" "}
                 <span className="text-foreground">
-                  {doc.ocr_confidence !== null ? `${Math.round(doc.ocr_confidence * 100)}%` : "N/A"}
+                  {doc.ocr_confidence !== null && doc.ocr_confidence !== undefined ? `${Math.round(doc.ocr_confidence * 100)}%` : "N/A"}
                 </span>
               </div>
               <div>

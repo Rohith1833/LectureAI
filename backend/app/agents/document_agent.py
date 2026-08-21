@@ -46,6 +46,11 @@ def run_document_agent(
         repo = DocumentRepository(db)
         db_doc = repo.save_extraction_result(extraction_result)
 
+        # 5. Run rerun approval validation
+        from app.services.intelligence.review.service import AcademicReviewService
+        review_service = AcademicReviewService(db)
+        review_service.validate_approval_after_rerun(upload_id)
+
         logger.info(
             "DocumentAgent finished processing for upload {}. Document DB ID: {}, Status: {}, OCR Status: {}",
             upload_id,

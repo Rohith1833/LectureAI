@@ -11,6 +11,7 @@ class Document(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     upload_id = Column(String(36), nullable=False, index=True)
     status = Column(String(32), default="processed")  # "processed" or "needs_ocr"
+    review_state = Column(String(32), default="NEEDS_REVIEW", nullable=False)
 
     # Meta auditing info
     extraction_version = Column(String(32), default="1.0.0")

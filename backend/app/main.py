@@ -47,6 +47,9 @@ def run_migrations():
             if "ocr_processing_time" not in doc_cols:
                 logger.info("Migration: adding ocr_processing_time to documents table")
                 conn.execute(text("ALTER TABLE documents ADD COLUMN ocr_processing_time FLOAT DEFAULT NULL"))
+            if "review_state" not in doc_cols:
+                logger.info("Migration: adding review_state to documents table")
+                conn.execute(text("ALTER TABLE documents ADD COLUMN review_state VARCHAR(32) DEFAULT 'NEEDS_REVIEW'"))
 
         # Migrate 'document_blocks' table
         block_cols = [c["name"] for c in inspector.get_columns("document_blocks")]
