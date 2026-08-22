@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,6 +17,11 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "LectureAI"
     API_VERSION: str = "v1"
     DATABASE_URL: str = "sqlite:///./lectureai.db"
+
+    # Groq API Configuration
+    GROQ_API_KEY: Optional[str] = None
+    GROQ_MODEL: str = "openai/gpt-oss-120b"
+
 
     # Document Normalization Pipeline Thresholds
     MAX_VERTICAL_GAP: float = 15.0

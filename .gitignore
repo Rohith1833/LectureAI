@@ -110,3 +110,12 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 coverage/
+
+# ========================
+# Runtime-generated application storage
+# ========================
+backend/app/storage/cache/
+backend/app/storage/jobs/
+backend/app/storage/metadata/
+backend/app/storage/uploads/
+backend/app/storage/temp/
