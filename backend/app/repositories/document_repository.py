@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from app.models.document import (
@@ -142,3 +142,20 @@ class DocumentRepository:
     def get_document(self, document_id: str) -> Optional[Document]:
         """Fetch document model by primary ID."""
         return self.db.query(Document).filter(Document.id == document_id).first()
+
+    def get_blocks_for_page(self, document_id: str, page_number: int) -> List[DocumentBlock]:
+        """Fetch all blocks for a specific page of a document, ordered by reading_order."""
+        return (
+            self.db.query(DocumentBlock)
+            .filter(
+                DocumentBlock.document_id == document_id,
+                DocumentBlock.page_number == page_number
+            )
+            .order_by(DocumentBlock.reading_order.asc())
+            .all()
+        )
+
+    def get_block(self, block_id: str) -> Optional[DocumentBlock]:
+        """Fetch a specific DocumentBlock by its primary ID."""
+        return self.db.query(DocumentBlock).filter(DocumentBlock.id == block_id).first()
+

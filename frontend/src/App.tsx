@@ -19,6 +19,7 @@ import { PresentationProvider } from "@/contexts/presentationContext";
 import DocumentPreviewPage from "@/pages/DocumentPreviewPage";
 import AcademicReviewPage from "@/pages/AcademicReviewPage";
 import KnowledgeExplorerPage from "@/pages/KnowledgeExplorerPage";
+import RetrievalInspectorPage from "@/pages/RetrievalInspectorPage";
 
 export default function App() {
   return (
@@ -34,7 +35,9 @@ export default function App() {
                   <Route path="/processing/:jobId" element={<ProcessingPage />} />
                   <Route path="/documents/:id" element={<DocumentPreviewPage />} />
                   <Route path="/documents/:id/knowledge" element={<KnowledgeExplorerPage />} />
+                  <Route path="/documents/:id/retrieval" element={<RetrievalInspectorPage />} />
                   <Route path="/academic/review/:uploadId" element={<AcademicReviewPage />} />
+
                   <Route path="/units" element={<UnitsPage />} />
                   <Route path="/outline" element={<OutlinePage />} />
                   <Route path="/preview" element={<PreviewPage />} />

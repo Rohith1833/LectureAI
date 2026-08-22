@@ -181,3 +181,33 @@ class KnowledgeRepository:
             .all()
         )
         return {"incoming": incoming, "outgoing": outgoing}
+
+    def search_entities(
+        self,
+        knowledge_version_id: str,
+        terms: List[str],
+        entity_types: Optional[List[str]] = None
+    ) -> List[KnowledgeEntity]:
+        """
+        Retrieves entities within a finalized KnowledgeVersion matching search terms.
+        Limits retrieval to the specified version and optional entity type filters.
+        """
+        if not terms:
+            return []
+
+        query = self.db.query(KnowledgeEntity).filter(
+            KnowledgeEntity.knowledge_version_id == knowledge_version_id
+        )
+        if entity_types:
+            query = query.filter(KnowledgeEntity.entity_type.in_(entity_types))
+
+        entities = query.all()
+
+        matched = []
+        for entity in entities:
+            title_lower = entity.title.lower()
+            content_lower = (entity.content or "").lower()
+            # Match if any term is in title or content
+            if any(term.lower() in title_lower or term.lower() in content_lower for term in terms):
+                matched.append(entity)
+        return matched
