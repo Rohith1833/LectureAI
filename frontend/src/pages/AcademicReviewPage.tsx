@@ -169,7 +169,18 @@ export default function AcademicReviewPage() {
         expected_version: currentRevision,
         comment: mutationComment || undefined
       }),
-    onSuccess: () => {
+    onSuccess: (data: any) => {
+      // Immediately update local cache with the new revision to prevent OCC conflicts on rapid actions
+      if (typeof data?.new_version === "number") {
+        queryClient.setQueryData(["reviewSummary", uploadId], (old: any) => {
+          if (!old) return old;
+          return {
+            ...old,
+            resolved_graph_version: data.new_version,
+          };
+        });
+      }
+
       // Invalidate and refetch all data queries
       queryClient.invalidateQueries({ queryKey: ["reviewSummary", uploadId] });
       queryClient.invalidateQueries({ queryKey: ["academicGraph", uploadId] });
@@ -448,6 +459,14 @@ export default function AcademicReviewPage() {
     });
   };
 
+  const handleAcceptAllUnreviewed = () => {
+    if (!summary || summary.unreviewed_count === 0) return;
+    applyActionMutation.mutate({
+      action_type: "ACCEPT_ALL_NODES",
+      payload: {}
+    });
+  };
+
   return (
     <div className="space-y-6 py-6 max-w-6xl mx-auto px-4">
       {/* 1. Header Section */}
@@ -574,13 +593,26 @@ export default function AcademicReviewPage() {
             <h3 className="text-sm font-bold flex items-center gap-2">
               <GitBranch className="size-4 text-violet-600" /> Academic Hierarchy
             </h3>
-            <Button
-              size="sm"
-              onClick={() => setShowCreateModal(true)}
-              className="gap-1 bg-violet-600 hover:bg-violet-700 text-white cursor-pointer h-7 text-[11px]"
-            >
-              <Plus className="size-3" /> Add Node
-            </Button>
+            <div className="flex items-center gap-2">
+              {summary.unreviewed_count > 0 && summary.document_review_state !== "APPROVED" && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleAcceptAllUnreviewed}
+                  disabled={applyActionMutation.isPending}
+                  className="gap-1 border-emerald-300 text-emerald-700 dark:border-emerald-800 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 cursor-pointer h-7 text-[11px] font-semibold"
+                >
+                  <Check className="size-3" /> Accept All ({summary.unreviewed_count})
+                </Button>
+              )}
+              <Button
+                size="sm"
+                onClick={() => setShowCreateModal(true)}
+                className="gap-1 bg-violet-600 hover:bg-violet-700 text-white cursor-pointer h-7 text-[11px]"
+              >
+                <Plus className="size-3" /> Add Node
+              </Button>
+            </div>
           </div>
 
           {/* Filtering Tools */}

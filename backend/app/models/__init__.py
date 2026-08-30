@@ -19,4 +19,27 @@ from app.models.knowledge import (
     KnowledgeRelationship,
     KnowledgeEvidence,
 )
+from app.models.conversation import (
+    Conversation,
+    ConversationMessage,
+)
 
+__all__ = [
+    "Base",
+    "Document",
+    "DocumentMetadata",
+    "DocumentPage",
+    "DocumentBlock",
+    "DocumentTable",
+    "DocumentImage",
+    "AcademicOverride",
+    "AcademicAuditEntry",
+    "AcademicReviewRevision",
+    "AcademicGraphSnapshot",
+    "KnowledgeVersion",
+    "KnowledgeEntity",
+    "KnowledgeRelationship",
+    "KnowledgeEvidence",
+    "Conversation",
+    "ConversationMessage",
+]

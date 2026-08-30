@@ -139,6 +139,12 @@ export default function DocumentPreviewPage() {
             Retrieval Inspector
           </Button>
           <Button
+            onClick={() => navigate(`/documents/${doc.id}/generation`)}
+            className="gap-1.5 cursor-pointer bg-violet-600 hover:bg-violet-700 text-white rounded-lg px-3 py-1.5 text-xs font-semibold"
+          >
+            AI Generation Workspace
+          </Button>
+          <Button
             onClick={() => navigate(`/academic/review/${doc.upload_id}`)}
             className="gap-1.5 cursor-pointer bg-violet-600 hover:bg-violet-700 text-white rounded-lg px-3 py-1.5 text-xs font-semibold"
           >

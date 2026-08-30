@@ -387,6 +387,11 @@ class AcademicReviewService:
                 "title": payload.get("title"),
                 "target_block_id": payload.get("target_block_id")
             }
+        elif action_type in ("ACCEPT_ALL_NODES", "ACCEPT_ALL"):
+            unreviewed_nodes = [n for n in resolved_result.nodes if n.review_state == NodeReviewState.UNREVIEWED]
+            previous_state = {"unreviewed_count": len(unreviewed_nodes)}
+            new_state = {"accepted_count": len(unreviewed_nodes)}
+            target_node_id = "upload_root"
         else:
             # Resolve target node
             if not target_anchor:
@@ -430,27 +435,49 @@ class AcademicReviewService:
             # Enforce optimistic concurrency control by locking and incrementing the revision row
             new_rev = self.review_repo.increment_revision(upload_id, expected_version)
 
-            override = self.review_repo.create_override(
-                upload_id=upload_id,
-                target_anchor_key=target_anchor or f"anc_manual_{int(time.time())}",
-                action_type=action_type,
-                payload=payload,
-                target_block_id=payload.get("target_block_id")
-            )
-            
-            # Re-update node_id in audit if it was created
-            if action_type == "CREATE_NODE":
-                target_node_id = f"an_manual_{override.id}"
+            if action_type in ("ACCEPT_ALL_NODES", "ACCEPT_ALL"):
+                for n in unreviewed_nodes:
+                    self.review_repo.create_override(
+                        upload_id=upload_id,
+                        target_anchor_key=n.anchor_key or f"anc_{n.node_id}",
+                        action_type="ACCEPT_NODE",
+                        payload={"target_anchor_key": n.anchor_key or f"anc_{n.node_id}"},
+                        target_block_id=n.target_block_id
+                    )
+                self.review_repo.create_audit_entry(
+                    upload_id=upload_id,
+                    user_id=user_id,
+                    action_type="ACCEPT_ALL_NODES",
+                    node_id="upload_root",
+                    previous_state=previous_state,
+                    new_state=new_state,
+                    comment=comment or f"Accepted all {len(unreviewed_nodes)} unreviewed academic nodes."
+                )
+                override_id = "bulk"
+            else:
+                override = self.review_repo.create_override(
+                    upload_id=upload_id,
+                    target_anchor_key=target_anchor or f"anc_manual_{int(time.time())}",
+                    action_type=action_type,
+                    payload=payload,
+                    target_block_id=payload.get("target_block_id")
+                )
+                override_id = override.id
+                
+                # Re-update node_id in audit if it was created
+                if action_type == "CREATE_NODE":
+                    target_node_id = f"an_manual_{override.id}"
 
-            self.review_repo.create_audit_entry(
-                upload_id=upload_id,
-                user_id=user_id,
-                action_type=action_type,
-                node_id=target_node_id,
-                previous_state=previous_state,
-                new_state=new_state,
-                comment=comment
-            )
+                self.review_repo.create_audit_entry(
+                    upload_id=upload_id,
+                    user_id=user_id,
+                    action_type=action_type,
+                    node_id=target_node_id,
+                    previous_state=previous_state,
+                    new_state=new_state,
+                    comment=comment
+                )
+
             self.db.commit()
             
             # Invalidate base graph cache entries for this upload
@@ -469,7 +496,7 @@ class AcademicReviewService:
 
         return {
             "success": True,
-            "override_id": override.id,
+            "override_id": override_id,
             "new_version": new_rev
         }
 
@@ -714,6 +741,11 @@ class AcademicReviewService:
             keys_to_del = [k for k in _BASE_GRAPH_CACHE.keys() if k.startswith(f"{upload_id}:")]
             for k in keys_to_del:
                 _BASE_GRAPH_CACHE.pop(k, None)
+
+            # 11. Compile snapshot into finalized KnowledgeVersion
+            from app.services.intelligence.knowledge_builder import KnowledgeBuilder
+            kb = KnowledgeBuilder(self.db)
+            kb.compile_snapshot(snapshot.id, reviewer_id=user_id)
 
             self.db.commit()
             return {

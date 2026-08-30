@@ -45,6 +45,7 @@ class Document(Base):
     blocks = relationship("DocumentBlock", back_populates="document", cascade="all, delete-orphan")
     tables = relationship("DocumentTable", back_populates="document", cascade="all, delete-orphan")
     images = relationship("DocumentImage", back_populates="document", cascade="all, delete-orphan")
+    conversations = relationship("Conversation", back_populates="document", cascade="all, delete-orphan")
 
 
 class DocumentMetadata(Base):

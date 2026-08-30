@@ -1,0 +1,42 @@
+{
+  "total_cases": 12,
+  "passed_cases": 6,
+  "failed_cases": 6,
+  "pass_rate": 0.5,
+  "average_overall_score": 0.8084,
+  "verdict_counts": {
+    "PASS": 6,
+    "WARNING": 0,
+    "FAIL": 6
+  },
+  "metric_aggregates": {
+    "schema_compliance_score": 0.75,
+    "citation_validity_rate": 0.9167,
+    "claim_citation_coverage": 0.8333,
+    "context_utilization_rate": 0.75,
+    "empty_abstention_accuracy": 0.9167,
+    "claim_faithfulness_score": 0.7381,
+    "answer_relevance_score": 0.8354,
+    "comparison_subject_coverage": 0.75,
+    "comparison_dimension_coverage": 1.0,
+    "comparison_table_completeness": 0.75,
+    "comparison_similarity_difference_balance": 0.5,
+    "study_guide_content_coverage": 0.6666,
+    "study_guide_question_coverage": 0.5
+  },
+  "mode_scores": {
+    "QA": 0.76,
+    "EXPLANATION": 1.0,
+    "SUMMARY": 0.9771,
+    "COMPARISON": 0.8118,
+    "STUDY_GUIDE": 0.7702
+  },
+  "failed_case_ids": [
+    "case_02_qa_unsupported",
+    "case_03_qa_invalid_citation",
+    "case_07_abstention_failed",
+    "case_09_comparison_missing_subject",
+    "case_11_study_guide_missing_questions",
+    "case_12_structural_malformed"
+  ]
+}

@@ -7,6 +7,8 @@ from app.api.routes.documents import router as documents_router
 from app.api.routes.review import router as review_router
 from app.api.routes.knowledge import router as knowledge_router
 from app.api.routes.retrieval import router as retrieval_router
+from app.api.routes.generation import router as generation_router
+from app.api.routes.conversation import router as conversation_router
 
 api_router = APIRouter()
 
@@ -17,4 +19,6 @@ api_router.include_router(documents_router, tags=["Documents"])
 api_router.include_router(review_router, tags=["Review"])
 api_router.include_router(knowledge_router, tags=["Knowledge"])
 api_router.include_router(retrieval_router, tags=["Retrieval"])
+api_router.include_router(generation_router, tags=["Generation"])
+api_router.include_router(conversation_router, tags=["Conversations"])
 

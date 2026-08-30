@@ -14,7 +14,8 @@ export interface InputProps extends React.ComponentProps<"input"> {
 
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
   ({ className, type = "text", label, helperText, error, id, ...props }, ref) => {
-    const inputId = id || React.useId();
+    const generatedId = React.useId();
+    const inputId = id || generatedId;
     return (
       <div className="w-full space-y-1.5">
         {label && (
@@ -55,7 +56,8 @@ export interface TextareaProps extends React.ComponentProps<"textarea"> {
 
 export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
   ({ className, label, helperText, error, id, ...props }, ref) => {
-    const textareaId = id || React.useId();
+    const generatedId = React.useId();
+    const textareaId = id || generatedId;
     return (
       <div className="w-full space-y-1.5">
         {label && (

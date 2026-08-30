@@ -15,9 +15,11 @@ class MockLLMProvider:
     self.scenario = scenario.lower()
     self.error_message = error_message
     self.custom_response = custom_response
+    self.calls = []
 
   async def generate(self, request: LLMGenerationRequest) -> LLMGenerationResponse:
     """Simulates asynchronous structured text generation based on the configured scenario."""
+    self.calls.append(request)
     if self.scenario == "provider_failure":
       raise LLMProviderError(self.error_message)
 
@@ -50,7 +52,7 @@ class MockLLMProvider:
 
     # Default 'success' scenario
     structured_data = {
-        "answer": "This is a deterministic correct grounded answer.",
+        "answer": self.custom_response or "This is a deterministic correct grounded answer.",
         "claims": [
             {
                 "claim_id": "c_mock_1",
