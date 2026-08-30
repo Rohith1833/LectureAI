@@ -71,6 +71,33 @@ class ReviewRepository:
         self.db.flush()  # Populates override.id
         return override
 
+    def create_bulk_overrides(
+        self,
+        overrides_data: List[dict]
+    ) -> None:
+        """Create multiple manual academic override entries efficiently."""
+        if not overrides_data:
+            return
+            
+        overrides = []
+        now = time.time()
+        for data in overrides_data:
+            overrides.append(
+                AcademicOverride(
+                    upload_id=data["upload_id"],
+                    target_anchor_key=data["target_anchor_key"],
+                    target_block_id=data.get("target_block_id"),
+                    action_type=data["action_type"],
+                    payload=data.get("payload", {}),
+                    is_active=True,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            
+        self.db.add_all(overrides)
+        self.db.flush()
+
     def get_override_by_id(self, override_id: str) -> Optional[AcademicOverride]:
         """Fetch a specific manual override by its primary ID."""
         return self.db.query(AcademicOverride).filter(AcademicOverride.id == override_id).first()

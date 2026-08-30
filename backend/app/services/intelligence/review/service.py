@@ -436,14 +436,17 @@ class AcademicReviewService:
             new_rev = self.review_repo.increment_revision(upload_id, expected_version)
 
             if action_type in ("ACCEPT_ALL_NODES", "ACCEPT_ALL"):
-                for n in unreviewed_nodes:
-                    self.review_repo.create_override(
-                        upload_id=upload_id,
-                        target_anchor_key=n.anchor_key or f"anc_{n.node_id}",
-                        action_type="ACCEPT_NODE",
-                        payload={"target_anchor_key": n.anchor_key or f"anc_{n.node_id}"},
-                        target_block_id=n.target_block_id
-                    )
+                overrides_data = [
+                    {
+                        "upload_id": upload_id,
+                        "target_anchor_key": n.anchor_key or f"anc_{n.node_id}",
+                        "action_type": "ACCEPT_NODE",
+                        "payload": {"target_anchor_key": n.anchor_key or f"anc_{n.node_id}"},
+                        "target_block_id": n.target_block_id,
+                    }
+                    for n in unreviewed_nodes
+                ]
+                self.review_repo.create_bulk_overrides(overrides_data)
                 self.review_repo.create_audit_entry(
                     upload_id=upload_id,
                     user_id=user_id,
@@ -480,10 +483,6 @@ class AcademicReviewService:
 
             self.db.commit()
             
-            # Invalidate base graph cache entries for this upload
-            keys_to_del = [k for k in _BASE_GRAPH_CACHE.keys() if k.startswith(f"{upload_id}:")]
-            for k in keys_to_del:
-                _BASE_GRAPH_CACHE.pop(k, None)
         except ValueError as ve:
             self.db.rollback()
             raise HTTPException(

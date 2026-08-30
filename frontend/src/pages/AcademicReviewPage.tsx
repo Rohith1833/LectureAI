@@ -602,7 +602,15 @@ export default function AcademicReviewPage() {
                   disabled={applyActionMutation.isPending}
                   className="gap-1 border-emerald-300 text-emerald-700 dark:border-emerald-800 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 cursor-pointer h-7 text-[11px] font-semibold"
                 >
-                  <Check className="size-3" /> Accept All ({summary.unreviewed_count})
+                  {applyActionMutation.isPending && applyActionMutation.variables?.action_type === "ACCEPT_ALL_NODES" ? (
+                    <>
+                      <RefreshCw className="size-3 animate-spin" /> Accepting...
+                    </>
+                  ) : (
+                    <>
+                      <Check className="size-3" /> Accept All ({summary.unreviewed_count})
+                    </>
+                  )}
                 </Button>
               )}
               <Button

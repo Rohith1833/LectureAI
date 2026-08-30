@@ -153,6 +153,160 @@ class TestReviewBulkAcceptAndKnowledgeFinalization(unittest.TestCase):
         )
         self.assertGreater(len(entities), 0)
 
+    def test_bulk_accept_scalability_large_graph_250_nodes(self):
+        """Regression test: verify Accept All handles >= 250 academic nodes efficiently and reliably."""
+        large_upload_id = "upload_large_scale_250"
+        large_doc_id = str(uuid.uuid4())
+
+        large_doc = Document(
+            id=large_doc_id,
+            upload_id=large_upload_id,
+            status="processed",
+            review_state="NEEDS_REVIEW",
+            processing_time=2.0,
+            extraction_timestamp="2026-08-29T12:00:00",
+        )
+        self.db.add(large_doc)
+
+        meta = DocumentMetadata(
+            id=str(uuid.uuid4()),
+            document_id=large_doc_id,
+            title="Massive Textbook",
+            page_count=50,
+        )
+        self.db.add(meta)
+
+        page = DocumentPage(
+            id=str(uuid.uuid4()),
+            document_id=large_doc_id,
+            page_number=1,
+            width=612.0,
+            height=792.0,
+        )
+        self.db.add(page)
+
+        # Create 260 blocks to generate >= 250 distinct nodes in the academic graph
+        for i in range(1, 261):
+            category_prefix = "Definition" if i % 2 == 0 else "Theorem"
+            block = DocumentBlock(
+                id=f"blk_large_{i:04d}",
+                document_id=large_doc_id,
+                page_id=page.id,
+                page_number=1,
+                reading_order=i,
+                block_type="PARAGRAPH" if i % 10 != 1 else "HEADING",
+                text=f"{category_prefix} {i}: Mathematical statement and derivation details for concept {i}.",
+                x0=50.0,
+                y0=50.0 + (i * 2.0),
+                x1=500.0,
+                y1=60.0 + (i * 2.0),
+                heading_level=2 if i % 10 == 1 else None,
+                confidence=0.92,
+            )
+            self.db.add(block)
+        
+        self.db.commit()
+
+        # Check that we have >= 250 unreviewed nodes
+        summary = self.service.get_review_summary(large_upload_id)
+        self.assertGreaterEqual(summary["unreviewed_count"], 250)
+        self.assertEqual(summary["accepted_count"], 0)
+
+        # Apply ACCEPT_ALL_NODES
+        rev = self.service.review_repo.get_or_create_revision(large_upload_id)
+        res = self.service.apply_review_action(
+            upload_id=large_upload_id,
+            action_type="ACCEPT_ALL_NODES",
+            payload={},
+            expected_version=rev,
+            user_id="reviewer_scaler",
+        )
+        self.assertTrue(res["success"])
+        self.assertEqual(res["override_id"], "bulk")
+
+        # Verify summary reflects all nodes are accepted
+        updated_summary = self.service.get_review_summary(large_upload_id)
+        self.assertEqual(updated_summary["unreviewed_count"], 0)
+        self.assertGreaterEqual(updated_summary["accepted_count"], 250)
+
+        # Check approval readiness
+        readiness = self.service.check_approval_readiness(large_upload_id)
+        self.assertTrue(readiness["eligible"])
+        self.assertEqual(len(readiness["blocking_reasons"]), 0)
+
+        # Approve and verify finalized knowledge version
+        approval_res = self.service.approve_resolved_graph(
+            upload_id=large_upload_id,
+            expected_revision=res["new_version"],
+            user_id="reviewer_scaler",
+        )
+        self.assertTrue(approval_res["success"])
+        self.assertEqual(large_doc.review_state, "APPROVED")
+
+        kv = (
+            self.db.query(KnowledgeVersion)
+            .filter(KnowledgeVersion.upload_id == large_upload_id)
+            .first()
+        )
+        self.assertIsNotNone(kv)
+        self.assertEqual(kv.status, "FINALIZED")
+
+        entities = (
+            self.db.query(KnowledgeEntity)
+            .filter(KnowledgeEntity.knowledge_version_id == kv.id)
+            .all()
+        )
+        self.assertGreaterEqual(len(entities), 250)
+
+    def test_individual_node_review_unchanged(self):
+        """Verify that individual node review actions remain fully functional and unchanged."""
+        single_upload_id = "upload_single_node_test"
+        single_doc_id = str(uuid.uuid4())
+
+        single_doc = Document(
+            id=single_doc_id,
+            upload_id=single_upload_id,
+            status="processed",
+            review_state="NEEDS_REVIEW",
+            processing_time=1.0,
+            extraction_timestamp="2026-08-29T12:00:00",
+        )
+        self.db.add(single_doc)
+        self.db.add(DocumentMetadata(id=str(uuid.uuid4()), document_id=single_doc_id, title="Single Doc", page_count=1))
+        page = DocumentPage(id=str(uuid.uuid4()), document_id=single_doc_id, page_number=1, width=612.0, height=792.0)
+        self.db.add(page)
+        self.db.add(DocumentBlock(
+            id="blk_single_1",
+            document_id=single_doc_id,
+            page_id=page.id,
+            page_number=1,
+            reading_order=1,
+            block_type="PARAGRAPH",
+            text="Definition 1: Singular value decomposition.",
+            x0=50.0, y0=50.0, x1=500.0, y1=70.0,
+            confidence=0.95
+        ))
+        self.db.commit()
+
+        graph = self.service.get_resolved_graph(single_upload_id)
+        node = graph["nodes"][0]
+
+        rev = self.service.review_repo.get_or_create_revision(single_upload_id)
+        res = self.service.apply_review_action(
+            upload_id=single_upload_id,
+            action_type="ACCEPT_NODE",
+            payload={"target_anchor_key": node["anchor_key"]},
+            expected_version=rev,
+            user_id="reviewer_single",
+        )
+        self.assertTrue(res["success"])
+        self.assertNotEqual(res["override_id"], "bulk")
+
+        summary = self.service.get_review_summary(single_upload_id)
+        self.assertEqual(summary["accepted_count"], 1)
+        self.assertEqual(summary["unreviewed_count"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
+
