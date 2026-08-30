@@ -9,3 +9,4 @@ pymupdf
 sqlalchemy
 pytesseract
 groq==1.6.0
+python-pptx

@@ -22,6 +22,7 @@ import KnowledgeExplorerPage from "@/pages/KnowledgeExplorerPage";
 import RetrievalInspectorPage from "@/pages/RetrievalInspectorPage";
 import GenerationWorkspacePage from "@/pages/GenerationWorkspacePage";
 import QnAPage from "@/pages/QnAPage";
+import ArtifactWorkspacePage from "@/pages/ArtifactWorkspacePage";
 
 export default function App() {
   return (
@@ -40,6 +41,7 @@ export default function App() {
                   <Route path="/documents/:id/retrieval" element={<RetrievalInspectorPage />} />
                   <Route path="/documents/:id/generation" element={<GenerationWorkspacePage />} />
                   <Route path="/documents/:id/qa" element={<QnAPage />} />
+                  <Route path="/documents/:id/artifact" element={<ArtifactWorkspacePage />} />
                   <Route path="/academic/review/:uploadId" element={<AcademicReviewPage />} />
 
                   <Route path="/units" element={<UnitsPage />} />
