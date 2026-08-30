@@ -9,6 +9,7 @@ from app.api.routes.knowledge import router as knowledge_router
 from app.api.routes.retrieval import router as retrieval_router
 from app.api.routes.generation import router as generation_router
 from app.api.routes.conversation import router as conversation_router
+from app.api.routes.artifact import router as artifact_router
 
 api_router = APIRouter()
 
@@ -21,4 +22,4 @@ api_router.include_router(knowledge_router, tags=["Knowledge"])
 api_router.include_router(retrieval_router, tags=["Retrieval"])
 api_router.include_router(generation_router, tags=["Generation"])
 api_router.include_router(conversation_router, tags=["Conversations"])
-
+api_router.include_router(artifact_router, prefix="/artifacts", tags=["Artifacts"])

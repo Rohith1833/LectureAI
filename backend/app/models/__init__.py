@@ -23,6 +23,9 @@ from app.models.conversation import (
     Conversation,
     ConversationMessage,
 )
+from app.models.artifact import (
+    ArtifactJob,
+)
 
 __all__ = [
     "Base",
@@ -42,4 +45,5 @@ __all__ = [
     "KnowledgeEvidence",
     "Conversation",
     "ConversationMessage",
+    "ArtifactJob",
 ]
