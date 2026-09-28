@@ -211,3 +211,26 @@ class KnowledgeRepository:
             if any(term.lower() in title_lower or term.lower() in content_lower for term in terms):
                 matched.append(entity)
         return matched
+
+    def get_all_evidence_for_page(
+        self,
+        document_id: str,
+        page_number: int,
+        version_id: Optional[str] = None
+    ) -> List[KnowledgeEvidence]:
+        """Fetch all evidence records on a given document page, optionally filtered to a version."""
+        query = (
+            self.db.query(KnowledgeEvidence)
+            .filter(
+                KnowledgeEvidence.document_id == document_id,
+                KnowledgeEvidence.page_number == page_number
+            )
+        )
+        if version_id:
+            has_entities = self.db.query(KnowledgeEntity.id).filter(KnowledgeEntity.knowledge_version_id == version_id).first()
+            if has_entities:
+                query = query.join(KnowledgeEntity, KnowledgeEvidence.entity_id == KnowledgeEntity.id).filter(
+                    KnowledgeEntity.knowledge_version_id == version_id
+                )
+        return query.all()
+

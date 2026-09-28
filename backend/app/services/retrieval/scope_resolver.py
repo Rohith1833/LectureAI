@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List
 
 from app.models.document import Document
 from app.repositories.knowledge_repository import KnowledgeRepository
@@ -10,6 +10,7 @@ from app.schemas.retrieval import RetrievalScope
 class ResolvedScope:
     document_id: str
     version_id: str
+    allowed_entity_ids: Optional[List[str]] = None
 
 
 class ScopeResolver:
@@ -59,5 +60,6 @@ class ScopeResolver:
 
         return ResolvedScope(
             document_id=scope.document_id,
-            version_id=resolved_version_id
+            version_id=resolved_version_id,
+            allowed_entity_ids=scope.allowed_entity_ids
         )

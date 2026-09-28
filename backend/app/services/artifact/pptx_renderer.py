@@ -18,22 +18,26 @@ class PPTXRenderer:
         tmp_path = f"{output_path}.tmp"
         try:
             prs = pptx.Presentation()
+            # Explicit widescreen 16:9 dimensions
+            prs.slide_width = pptx.util.Inches(13.333)
+            prs.slide_height = pptx.util.Inches(7.5)
 
             for slide_model in plan.slides:
                 self._render_slide(prs, slide_model)
 
             prs.save(tmp_path)
             
-            # Atomic promotion
-            if os.path.exists(output_path):
-                os.remove(output_path)
+            # Atomic promotion: replace directly without deleting existing valid file first
             os.replace(tmp_path, output_path)
             
             return output_path
             
         except Exception as e:
             if os.path.exists(tmp_path):
-                os.remove(tmp_path)
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
             raise e
 
     def _render_slide(self, prs: pptx.Presentation, slide_model: SlideModel):

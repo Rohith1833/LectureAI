@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -82,22 +82,55 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Shutting down {}", settings.PROJECT_NAME)
 
 
-def create_app() -> FastAPI:
-    """Application factory — creates and configures the FastAPI instance."""
+ALLOWED_DEVELOPMENT_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+
+class CORSAppProxy:
+    """Outermost ASGI application proxy wrapping the complete application with standard CORSMiddleware.
+
+    This guarantees that all HTTP responses, including unhandled 500 errors produced by Starlette's
+    ServerErrorMiddleware or raw ASGI layer, receive proper Access-Control-Allow-Origin headers
+    for allowed development origins.
+    All attributes and methods (routes, openapi, dependency_overrides, state, lifespan) are delegated
+    transparently to the inner FastAPI application.
+    """
+
+    def __init__(self, fastapi_app: FastAPI, allowed_origins: list[str]):
+        self._app = fastapi_app
+        self._cors = CORSMiddleware(
+            app=fastapi_app,
+            allow_origins=allowed_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        await self._cors(scope, receive, send)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._app, name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in ("_app", "_cors"):
+            super().__setattr__(name, value)
+        else:
+            setattr(self._app, name, value)
+
+    def __repr__(self) -> str:
+        return f"<CORSAppProxy wrapping {self._app!r}>"
+
+
+def create_fastapi_app() -> FastAPI:
+    """Creates and configures the inner FastAPI application with routes and exception handlers."""
     app = FastAPI(
         title=settings.PROJECT_NAME,
         version="1.0.0",
         debug=settings.DEBUG,
         lifespan=lifespan,
-    )
-
-    # --- CORS ---
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["http://localhost:5173"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
     )
 
     # --- Request Logging Middleware ---
@@ -177,6 +210,12 @@ def create_app() -> FastAPI:
     app.include_router(api_router, prefix=settings.api_prefix)
 
     return app
+
+
+def create_app() -> CORSAppProxy:
+    """Application factory — returns the ASGI application wrapped with boundary-level CORSMiddleware."""
+    fastapi_app = create_fastapi_app()
+    return CORSAppProxy(fastapi_app, ALLOWED_DEVELOPMENT_ORIGINS)
 
 
 app = create_app()

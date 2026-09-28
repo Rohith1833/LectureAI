@@ -25,6 +25,9 @@ class MockKnowledgeRepo:
     def get_version(self, version_id: str):
         return self.version
 
+    def get_finalized_version(self, version_id: str):
+        return self.version
+
 class MockRetrievalService:
     def __init__(self, result: RetrievalResult):
         self.result = result
@@ -42,7 +45,7 @@ def base_knowledge():
         knowledge_version_id="kv1",
         entity_type=AcademicNodeCategory.UNIT,
         title="Unit 1",
-        content="Unit Content",
+        content="Unit 1 provides comprehensive foundational principles covering core computational models and algorithmic design.",
         stable_id="s1"
     )
     topic = KnowledgeEntitySchema(
@@ -50,7 +53,7 @@ def base_knowledge():
         knowledge_version_id="kv1",
         entity_type=AcademicNodeCategory.TOPIC,
         title="Topic 1",
-        content="Topic Content",
+        content="Topic 1 introduces fundamental data structures and graph traversal algorithms for complex network analysis.",
         stable_id="s2"
     )
     
@@ -222,13 +225,13 @@ async def test_planner_subdivides_large_unit(base_job):
     
     unit_id = "u1_large"
     entities.append(KnowledgeEntitySchema(
-        id=unit_id, knowledge_version_id="kv1", entity_type=AcademicNodeCategory.UNIT, title="Large Unit", content="...", stable_id="s_u"
+        id=unit_id, knowledge_version_id="kv1", entity_type=AcademicNodeCategory.UNIT, title="Large Unit", content="Foundational overview of systemic computational architecture and design patterns.", stable_id="s_u"
     ))
     
     for t_idx in range(3):
         t_id = f"t{t_idx}"
         entities.append(KnowledgeEntitySchema(
-            id=t_id, knowledge_version_id="kv1", entity_type=AcademicNodeCategory.TOPIC, title=f"Topic {t_idx}", content="...", stable_id=f"s_{t_id}"
+            id=t_id, knowledge_version_id="kv1", entity_type=AcademicNodeCategory.TOPIC, title=f"Topic {t_idx}", content=f"Detailed theoretical formulation and structural properties of topic {t_idx}.", stable_id=f"s_{t_id}"
         ))
         rels.append(KnowledgeRelationshipSchema(
             id=f"r_u_t{t_idx}", knowledge_version_id="kv1", source_entity_id=unit_id, target_entity_id=t_id, relationship_type=KnowledgeRelationshipType.CONTAINS
@@ -237,7 +240,7 @@ async def test_planner_subdivides_large_unit(base_job):
         for c_idx in range(4):
             c_id = f"c{t_idx}_{c_idx}"
             entities.append(KnowledgeEntitySchema(
-                id=c_id, knowledge_version_id="kv1", entity_type=AcademicNodeCategory.CONCEPT, title=f"Concept {c_idx}", content="...", stable_id=f"s_{c_id}"
+                id=c_id, knowledge_version_id="kv1", entity_type=AcademicNodeCategory.CONCEPT, title=f"Concept {c_idx}", content=f"Concrete algorithmic implementations and proofs for concept {c_idx} under topic {t_idx}.", stable_id=f"s_{c_id}"
             ))
             rels.append(KnowledgeRelationshipSchema(
                 id=f"r_t{t_idx}_c{c_id}", knowledge_version_id="kv1", source_entity_id=t_id, target_entity_id=c_id, relationship_type=KnowledgeRelationshipType.CONTAINS
@@ -286,3 +289,59 @@ async def test_planner_subdivides_large_unit(base_job):
     # So we expect 2 LLM calls and 2 resulting slides total.
     assert llm_provider.generate.call_count == 2
     assert len(plan.slides) == 2
+
+
+@pytest.mark.asyncio
+async def test_empty_retrieval_without_substantive_material_halts(base_job):
+    # Entity has empty / trivial heading-only content and retrieval returns no substantive passages/evidence
+    unit_id = "u_trivial"
+    unit = KnowledgeEntitySchema(
+        id=unit_id,
+        knowledge_version_id="kv1",
+        entity_type=AcademicNodeCategory.UNIT,
+        title="Empty Unit",
+        content="",  # Empty content
+        stable_id="s_empty",
+        evidence=[
+            KnowledgeEvidenceSchema(
+                id="ev_triv",
+                entity_id=unit_id,
+                document_id="u1",
+                page_number=4,
+                source_anchor_key="block_99",
+                text_reference="",  # Empty reference
+                provenance="EXPLICIT_CLASSIFIER"
+            )
+        ]
+    )
+    kv = KnowledgeVersionSchema(id="kv1", upload_id="u1", snapshot_id="snap1", entities=[unit], relationships=[])
+
+    llm_provider = AsyncMock()
+    # Empty retrieval result with NO diagnostics (e.g. no exclusion occurred, just no text matches)
+    retrieval_result = RetrievalResult(
+        query="test",
+        scope=RetrievalScope(document_id="u1", version_id="kv1"),
+        provenance=RetrievalProvenance(knowledge_version_id="kv1", approval_version=1, document_id="u1", strategy_used="LEXICAL", total_candidates_considered=0),
+        entities=[],
+        total_entity_count=0,
+        has_more=False,
+        diagnostics=[]  # No diagnostics
+    )
+
+    planner = ArtifactPlanner(
+        knowledge_repo=MockKnowledgeRepo(kv),
+        retrieval_service=MockRetrievalService(retrieval_result),
+        llm_provider=llm_provider
+    )
+
+    with pytest.raises(GroundingValidationError) as exc_info:
+        await planner.plan(base_job)
+
+    # Must halt BEFORE provider invocation
+    assert llm_provider.generate.call_count == 0
+    # Must identify the affected container and source location
+    err_msg = str(exc_info.value)
+    assert "Empty Unit" in err_msg
+    assert "page 4" in err_msg
+    assert "block_99" in err_msg
+

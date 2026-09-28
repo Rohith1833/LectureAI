@@ -25,6 +25,8 @@ class ArtifactValidationContext(BaseModel):
     valid_evidence_ids: Set[str]
     expected_units: Set[str]
     config: Dict[str, Any]
+    container_type: Optional[str] = "UNIT"
+    container_to_descendants: Optional[Dict[str, Set[str]]] = None
 
 class ArtifactValidator:
     """
@@ -57,15 +59,20 @@ class ArtifactValidator:
             # 5. Grounding & Provenance
             self._validate_slide_grounding(slide, i, context, result)
             
-            # Record found units for coverage (assume source_node_ids could include units)
+            # Record found containers for coverage
             for sid in slide.source_node_ids:
                 if sid in context.expected_units:
                     found_units.add(sid)
+                elif context.container_to_descendants:
+                    for cid, desc_ids in context.container_to_descendants.items():
+                        if sid in desc_ids:
+                            found_units.add(cid)
                     
         # 6. Academic Coverage Validation
+        container_label = (context.container_type or "unit").lower()
         for expected_unit in context.expected_units:
             if expected_unit not in found_units:
-                self._add_error(result, None, "COVERAGE", f"Missing required unit '{expected_unit}' in the plan.")
+                self._add_error(result, None, "COVERAGE", f"Missing required {container_label} '{expected_unit}' in the plan.")
                 
         # Final validity check
         if len(result.errors) > 0:

@@ -45,7 +45,7 @@ class RetrievalService(BaseRetriever):
         self.lexical_retriever = LexicalRetriever(knowledge_repo)
         self.graph_expander = GraphExpander(knowledge_repo)
         self.evidence_retriever = EvidenceRetriever(knowledge_repo)
-        self.passage_retriever = PassageRetriever(document_repo)
+        self.passage_retriever = PassageRetriever(document_repo, knowledge_repo=knowledge_repo)
         self.ranker = Ranker()
         self.weights = weights
 
@@ -135,11 +135,11 @@ class RetrievalService(BaseRetriever):
                 if r.relationship.target_entity_id == ent_id
             ]
 
-            # Convert evidence
+            # Convert evidence (excluding any whose boundaries failed safe isolation)
             ev_list = [
                 KnowledgeEvidenceSchema.model_validate(e.evidence)
                 for e in evidence_candidates
-                if e.entity_id == ent_id
+                if e.entity_id == ent_id and e.evidence.id not in self.passage_retriever.excluded_evidence_ids
             ]
 
             # Convert passages
@@ -195,9 +195,9 @@ class RetrievalService(BaseRetriever):
         return RetrievalResult(
             query=normalized_query.raw,
             scope=request.scope,
-
             provenance=provenance,
             entities=truncated_entities,
             total_entity_count=total_entity_count,
-            has_more=has_more
+            has_more=has_more,
+            diagnostics=list(self.passage_retriever.diagnostics)
         )

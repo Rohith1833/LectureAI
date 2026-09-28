@@ -4,7 +4,8 @@ from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import sessionmaker, Session
-from app.models.document import Base
+from datetime import datetime
+from app.models.document import Base, Document
 from app.models.knowledge import KnowledgeVersion, KnowledgeEntity
 from app.schemas.knowledge import KnowledgeVersionStatus
 from app.schemas.artifact import ArtifactJobCreate, ArtifactType, ArtifactStatus
@@ -52,6 +53,17 @@ async def test_generation_pipeline_success(db: Session, mock_plan):
     
     # We need a finalized knowledge version with a unit matching 'unit_test'
     # For integration testing, it's easier to create the raw entity and version
+    # Create valid Document record with distinct document and upload IDs
+    doc = Document(
+        id="doc_orchestration_test",
+        upload_id="test_upload",
+        status="processed",
+        review_state="APPROVED",
+        extraction_timestamp=datetime.utcnow(),
+        processing_time=1.0
+    )
+    db.add(doc)
+
     version = KnowledgeVersion(
         id="test_kv_id",
         upload_id="test_upload",
@@ -98,6 +110,17 @@ async def test_generation_pipeline_success(db: Session, mock_plan):
 @pytest.mark.asyncio
 async def test_generation_pipeline_validation_failure(db: Session, mock_plan):
     # Setup test data without the required unit to trigger validation failure
+    # Create valid Document record with distinct document and upload IDs
+    doc_fail = Document(
+        id="doc_orchestration_fail",
+        upload_id="test_upload_fail",
+        status="processed",
+        review_state="APPROVED",
+        extraction_timestamp=datetime.utcnow(),
+        processing_time=1.0
+    )
+    db.add(doc_fail)
+
     version = KnowledgeVersion(
         id="test_kv_id_fail",
         upload_id="test_upload_fail",

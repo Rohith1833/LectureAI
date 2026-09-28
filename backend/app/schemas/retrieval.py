@@ -14,6 +14,7 @@ class RetrievalScope(BaseModel):
     version_id: Optional[str] = Field(None, description="Explicit finalized KnowledgeVersion UUID. If None, resolves to latest.")
     entity_types: Optional[List[str]] = Field(None, description="Optional filter to restrict retrieval to specific entity types.")
     relationship_types: Optional[List[str]] = Field(None, description="Optional filter to restrict relationship expansion types.")
+    allowed_entity_ids: Optional[List[str]] = Field(None, description="Optional filter to restrict candidate entities to a permitted selection.")
 
 
 class RetrievalOptions(BaseModel):
@@ -82,3 +83,5 @@ class RetrievalResult(BaseModel):
     entities: List[RetrievedEntity] = Field(default_factory=list, description="Ranked retrieved entity results.")
     total_entity_count: int = Field(..., description="Total entities present in the target version graph.")
     has_more: bool = Field(..., description="Flag indicating if matches were truncated by top_k.")
+    diagnostics: List[str] = Field(default_factory=list, description="Diagnostic details on passage resolution, exclusions, and layout boundaries.")
+

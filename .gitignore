@@ -119,3 +119,5 @@ backend/app/storage/jobs/
 backend/app/storage/metadata/
 backend/app/storage/uploads/
 backend/app/storage/temp/
+
+backend/*.db.bak*

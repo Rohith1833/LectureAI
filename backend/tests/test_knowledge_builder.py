@@ -170,9 +170,9 @@ class TestKnowledgeBuilder(unittest.TestCase):
         self.assertIn("is not APPROVED", str(ctx.exception))
 
     def test_03_category_contract_filtering(self):
-        """Verify that unsupported categories (e.g. UNIT, LEARNING_OBJECTIVE) are explicitly filtered out."""
-        # Add unsupported node type to snapshot nodes list
-        unsupported_nodes = self.nodes_data + [
+        """Verify that UNIT is preserved while unsupported categories (e.g. LEARNING_OBJECTIVE) are explicitly filtered out."""
+        # Add UNIT and an unsupported node type to snapshot nodes list
+        test_nodes = self.nodes_data + [
             {
                 "node_id": "an_unit_1",
                 "category": "UNIT",
@@ -192,8 +192,8 @@ class TestKnowledgeBuilder(unittest.TestCase):
                 "metadata": {}
             }
         ]
-        # Relationship involving unsupported node is also expected to be skipped
-        unsupported_edges = self.edges_data + [
+        # Relationship involving UNIT is preserved; relationship involving LEARNING_OBJECTIVE would be skipped
+        test_edges = self.edges_data + [
             {
                 "source_node_id": "an_unit_1",
                 "target_node_id": "an_concept_1",
@@ -211,23 +211,23 @@ class TestKnowledgeBuilder(unittest.TestCase):
             resolved_graph_fingerprint="rfp4567",
             approval_timestamp=time.time(),
             reviewer_id="reviewer_1",
-            nodes=unsupported_nodes,
-            edges=unsupported_edges
+            nodes=test_nodes,
+            edges=test_edges
         )
         self.db.add(new_snapshot)
         self.db.commit()
 
         version = self.builder.compile_snapshot(new_snapshot.id)
         entities = self.db.query(KnowledgeEntity).filter(KnowledgeEntity.knowledge_version_id == version.id).all()
-        # Should only compile the 2 valid categories
-        self.assertEqual(len(entities), 2)
+        # Should compile the 2 base categories + UNIT = 3 entities
+        self.assertEqual(len(entities), 3)
         entity_categories = {e.entity_type for e in entities}
-        self.assertNotIn("UNIT", entity_categories)
+        self.assertIn("UNIT", entity_categories)
         self.assertNotIn("LEARNING_OBJECTIVE", entity_categories)
 
-        # Verification of edges: should skip relations involving the UNIT node
+        # Verification of edges: UNIT -> CONCEPT containment is compiled
         rels = self.db.query(KnowledgeRelationship).filter(KnowledgeRelationship.knowledge_version_id == version.id).all()
-        self.assertEqual(len(rels), 1)
+        self.assertEqual(len(rels), 2)
 
     def test_04_stable_identity_fallback_ordinary_node_rejection(self):
         """Verify that ordinary nodes missing an anchor_key are rejected."""

@@ -13,10 +13,11 @@ from app.models.knowledge import (
     KnowledgeEvidence
 )
 from app.schemas.knowledge import KnowledgeRelationshipType, KnowledgeEvidenceProvenance
+from app.services.intelligence.knowledge_ordering import resolve_node_source_positions
 
-# Valid Phase 6A node categories
+# Valid node categories preserved during compilation
 VALID_KNOWLEDGE_CATEGORIES = {
-    "CHAPTER", "SECTION", "TOPIC", "CONCEPT", "DEFINITION", 
+    "UNIT", "CHAPTER", "SECTION", "TOPIC", "CONCEPT", "DEFINITION", 
     "THEOREM", "PROOF", "FORMULA", "ALGORITHM", "EXAMPLE", 
     "EXERCISE", "SUMMARY"
 }
@@ -89,11 +90,16 @@ class KnowledgeBuilder:
             node_id_to_entity_id: Dict[str, str] = {}
             compiled_entities: Dict[str, KnowledgeEntity] = {}
 
+            # Pre-compute canonical source positions with descendant fallback
+            nodes_list = snapshot.nodes or []
+            edges_list = snapshot.edges or []
+            ordering_map = resolve_node_source_positions(nodes_list, edges_list, doc_blocks)
+
             # Compile Entities
             for s_node in snapshot.nodes:
                 category = s_node.get("category")
                 
-                # Category Contract: filter out UNIT, LEARNING_OBJECTIVE, etc.
+                # Category Contract: filter out unsupported categories (e.g. LEARNING_OBJECTIVE)
                 if category not in VALID_KNOWLEDGE_CATEGORIES:
                     continue
 
@@ -111,6 +117,12 @@ class KnowledgeBuilder:
                 title = s_node.get("title") or "Untitled Entity"
                 content = title
 
+                # Merge node metadata with canonical source ordering info
+                entity_meta = dict(s_node.get("metadata") or {})
+                node_id = s_node.get("node_id")
+                if node_id and node_id in ordering_map:
+                    entity_meta.update(ordering_map[node_id])
+
                 entity = KnowledgeEntity(
                     id=str(uuid.uuid4()),
                     knowledge_version_id=version.id,
@@ -118,7 +130,7 @@ class KnowledgeBuilder:
                     title=title,
                     content=content,
                     stable_id=anchor_key,
-                    metadata_json=s_node.get("metadata")
+                    metadata_json=entity_meta
                 )
                 self.db.add(entity)
                 self.db.flush()

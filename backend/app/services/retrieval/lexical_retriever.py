@@ -35,6 +35,11 @@ class LexicalRetriever:
             entity_types=entity_types
         )
 
+        # Enforce selection scoping if allowed_entity_ids filter is specified
+        if scope_filters.allowed_entity_ids is not None:
+            allowed_set = set(scope_filters.allowed_entity_ids)
+            entities = [e for e in entities if e.id in allowed_set]
+
         candidates: List[EntityCandidate] = []
         query_normalized = query.normalized
 

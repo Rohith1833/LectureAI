@@ -84,6 +84,11 @@ class GraphExpander:
                 else:
                     neighbor_id = rel.source_entity_id
 
+                # Selection Scoping: do not expand into entities outside allowed_entity_ids
+                if scope_filters.allowed_entity_ids is not None:
+                    if neighbor_id not in set(scope_filters.allowed_entity_ids):
+                        continue
+
                 new_hop = current_hop + 1
 
                 # Lazy fetch neighbor entity

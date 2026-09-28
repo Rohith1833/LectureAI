@@ -24,12 +24,33 @@ from app.services.artifact.artifact_planner import ArtifactPlanner
 from app.services.artifact.artifact_validator import ArtifactValidator, ArtifactValidationContext
 from app.services.artifact.pptx_renderer import PPTXRenderer
 from app.core.config import settings
+from app.services.generation.errors import LLMProviderError
+from app.models.artifact import ArtifactJob
+import os
+import pptx
 
-def _get_provider():
-    key = settings.GROQ_API_KEY
-    if key and key.strip() and key.strip() != "test-groq-key":
-        return GroqProvider()
-    return MockLLMProvider(scenario="success")
+def _get_provider(config: Optional[dict] = None):
+    cfg = config or {}
+    provider_name = cfg.get("provider") or getattr(settings, "LLM_PROVIDER", None) or os.environ.get("LLM_PROVIDER")
+    if provider_name:
+        provider_name = provider_name.strip().lower()
+
+    if provider_name in ("mock", "test"):
+        scenario = cfg.get("mock_scenario", "success")
+        return MockLLMProvider(scenario=scenario)
+
+    api_key = settings.GROQ_API_KEY
+    if not api_key or not api_key.strip() or api_key.strip() == "test-groq-key":
+        raise LLMProviderError(
+            "Missing live provider configuration: GROQ_API_KEY environment variable is not configured. "
+            "Mock provider is only available through explicit test/demo configuration (e.g. provider='mock' or LLM_PROVIDER=mock)."
+        )
+    return GroqProvider(api_key=api_key)
+
+from app.services.artifact.selection_resolver import (
+    resolve_effective_selection,
+    resolve_effective_selection_for_job
+)
 
 class ArtifactService:
     def __init__(self, db: Session):
@@ -38,28 +59,33 @@ class ArtifactService:
 
     def create_artifact_job(self, request: ArtifactJobCreate) -> ArtifactJobRead:
         """
-        Create a new artifact job, enforcing strict version locking and validation.
+        Create a new artifact job, enforcing strict version locking, document association,
+        and container selection validation.
         """
-        # Validate knowledge_version_id
-        kv = self.db.query(KnowledgeVersion).filter(
-            KnowledgeVersion.id == request.knowledge_version_id
-        ).first()
-        
-        if not kv:
-            raise HTTPException(status_code=404, detail="Knowledge version not found.")
-            
-        if kv.upload_id != request.upload_id:
-            raise HTTPException(
-                status_code=400, 
-                detail="Knowledge version does not belong to the requested upload_id."
+        try:
+            effective_selection = resolve_effective_selection(
+                db=self.db,
+                version_id=request.knowledge_version_id,
+                upload_id=request.upload_id,
+                config=request.config
             )
-            
-        if kv.status != KnowledgeVersionStatus.FINALIZED.value:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Cannot generate artifact from unfinalized knowledge version. Status: {kv.status}"
-            )
-            
+        except ValueError as e:
+            # Map validation errors: 404 only for missing KnowledgeVersion itself, 400 for container/contract errors
+            err_msg = str(e)
+            if err_msg.startswith("Knowledge version") and "not found" in err_msg.lower():
+                raise HTTPException(status_code=404, detail=err_msg)
+            raise HTTPException(status_code=400, detail=err_msg)
+
+        # Persist the resolved selection into job config
+        updated_config = dict(request.config)
+        updated_config["selected_unit_ids"] = effective_selection.selected_container_ids
+        updated_config["container_mode"] = effective_selection.container_mode.value
+        updated_config["container_type"] = effective_selection.container_type
+        updated_config["document_id"] = effective_selection.document_id
+        if "num_units" in updated_config:
+            del updated_config["num_units"]
+        request.config = updated_config
+
         job = self.repo.create_job(request)
         return ArtifactJobRead.model_validate(job)
 
@@ -73,25 +99,67 @@ class ArtifactService:
         jobs = self.repo.list_jobs(upload_id)
         return [ArtifactJobRead.model_validate(j) for j in jobs]
 
+    def recover_interrupted_jobs(self) -> int:
+        """
+        Scans for jobs left in PLANNING or RENDERING state (e.g. after a process crash/restart).
+        Transitions them to FAILED with an explicit actionable message.
+        Does NOT automatically resume or charge for interrupted work.
+        Returns the count of recovered jobs.
+        """
+        in_flight_jobs = self.db.query(ArtifactJob).filter(
+            ArtifactJob.status.in_([ArtifactStatus.PLANNING.value, ArtifactStatus.RENDERING.value])
+        ).all()
+        recovered = 0
+        for job in in_flight_jobs:
+            job.status = ArtifactStatus.FAILED.value
+            job.error_message = (
+                f"Job execution was interrupted while in {job.status} stage "
+                "(server shutdown or background worker termination). "
+                "Please submit a new generation request."
+            )
+            job.completed_at = datetime.utcnow()
+            out_path = Path("data/artifacts") / f"artifact_{job.id}.pptx"
+            if out_path.exists():
+                try:
+                    out_path.unlink()
+                except Exception:
+                    pass
+            recovered += 1
+        if recovered > 0:
+            self.db.commit()
+            logger.info(f"Recovered {recovered} interrupted artifact jobs to FAILED status.")
+        return recovered
+
     async def run_generation_pipeline(self, job_id: str) -> None:
         """
         End-to-end background orchestration of artifact generation:
         PENDING -> PLANNING -> RENDERING -> COMPLETED
         """
         logger.info(f"Starting background pipeline for artifact job {job_id}")
+        current_stage = "INITIALIZATION"
+        out_path = Path("data/artifacts") / f"artifact_{job_id}.pptx"
         
         try:
+            # Check current job state and reject duplicate execution
+            existing_job = self.repo.get_job(job_id)
+            if not existing_job:
+                logger.error(f"Job {job_id} not found when starting pipeline.")
+                return
+            if existing_job.status in (ArtifactStatus.PLANNING.value, ArtifactStatus.RENDERING.value, ArtifactStatus.COMPLETED.value):
+                logger.warning(f"Job {job_id} is already in {existing_job.status} state. Rejecting duplicate execution.")
+                return
+
             # Transition to PLANNING
+            current_stage = "PLANNING"
             job = self.repo.update_job_status(job_id, ArtifactStatus.PLANNING)
             if not job:
-                logger.error(f"Job {job_id} not found when starting pipeline.")
+                logger.error(f"Job {job_id} not found when transitioning to PLANNING.")
                 return
                 
             # 1. Initialize services
             knowledge_repo = KnowledgeRepository(self.db)
             document_repo = DocumentRepository(self.db)
             
-            # Recreate exactly what RetrievalService needs
             retrieval_service = RetrievalService(
                 knowledge_repo=knowledge_repo,
                 document_repo=document_repo,
@@ -100,51 +168,27 @@ class ArtifactService:
                     relationship=0.1, evidence=0.1, passage=0.1, confidence=0.05
                 )
             )
-            llm_provider = _get_provider()
+            llm_provider = _get_provider(job.config)
             
             planner = ArtifactPlanner(knowledge_repo, retrieval_service, llm_provider)
             validator = ArtifactValidator()
             renderer = PPTXRenderer()
             
-            # Fetch knowledge version to build validation context
-            kv = knowledge_repo.get_finalized_version(job.knowledge_version_id)
-            if not kv:
-                raise ValueError(f"Knowledge version {job.knowledge_version_id} not found during planning.")
-                
-            expected_units = set()
-            valid_node_ids = set()
-            for entity in kv.entities:
-                valid_node_ids.add(entity.id)
-                if entity.entity_type == AcademicNodeCategory.UNIT:
-                    expected_units.add(entity.id)
-                    
-            # For strict subset of expected units based on config num_units
-            num_units = job.config.get("num_units")
-            if num_units and num_units < len(expected_units):
-                # Just get the top N units preserving order - simplified logic for context
-                sorted_units = sorted([e for e in kv.entities if e.entity_type == AcademicNodeCategory.UNIT], key=lambda x: x.id)
-                expected_units = set(u.id for u in sorted_units[:num_units])
-                
-            # valid_evidence_ids logic would ideally be precomputed or retrieved.
-            # For safety, we will let validator use a loose set or we must extract all evidence.
-            # In Phase 9C, planner extracts evidence during its chunks. 
-            # To avoid an expensive DB query here, we'll let Validator only assert what's provided, 
-            # but ideally we supply all valid evidence IDs from the version.
-            valid_evidence_ids = set()
-            for entity in kv.entities:
-                for ev in entity.evidence:
-                    if ev.id:
-                        valid_evidence_ids.add(ev.id)
-            
+            # Resolve effective selection shared across planning and validation
+            effective_selection = resolve_effective_selection_for_job(self.db, job)
+
             # 2. Planning (Phase 9C)
             plan = await planner.plan(ArtifactJobRead.model_validate(job))
             
             # 3. Validation (Phase 9D)
+            current_stage = "VALIDATION"
             context = ArtifactValidationContext(
-                valid_node_ids=valid_node_ids,
-                valid_evidence_ids=valid_evidence_ids,
-                expected_units=expected_units,
-                config=job.config
+                valid_node_ids=effective_selection.permitted_entity_ids,
+                valid_evidence_ids=effective_selection.permitted_evidence_ids,
+                expected_units=set(effective_selection.selected_container_ids),
+                config=job.config,
+                container_type=effective_selection.container_type,
+                container_to_descendants=effective_selection.container_to_descendants
             )
             validation_result = validator.validate(plan, context)
             
@@ -152,38 +196,64 @@ class ArtifactService:
                 errors = [f"{e.category}: {e.message}" for e in validation_result.errors]
                 raise ValueError(f"Validation failed: {'; '.join(errors)}")
                 
+            # Persist validated plan and metadata diagnostics
+            job.plan = plan.model_dump()
+            self.db.commit()
+
             # 4. Transition to RENDERING
+            current_stage = "RENDERING"
             job = self.repo.update_job_status(job_id, ArtifactStatus.RENDERING)
             
             # 5. Rendering (Phase 9B)
-            # Output directory should be inside a generic artifacts dir
             out_dir = Path("data/artifacts")
             out_dir.mkdir(parents=True, exist_ok=True)
-            out_path = out_dir / f"artifact_{job_id}.pptx"
             
             result_path = renderer.render(plan, str(out_path))
             
-            # 6. COMPLETED
+            # 6. Reopen verification: ensure artifact exists and is not corrupt
+            current_stage = "VERIFICATION"
+            if not os.path.exists(result_path) or os.path.getsize(result_path) == 0:
+                raise ValueError(f"Rendered artifact file is missing or empty at {result_path}")
+            try:
+                prs_check = pptx.Presentation(result_path)
+                if len(prs_check.slides) == 0:
+                    raise ValueError("Rendered artifact presentation contains zero slides")
+            except Exception as pe:
+                if os.path.exists(result_path):
+                    try:
+                        os.remove(result_path)
+                    except Exception:
+                        pass
+                raise ValueError(f"Rendered artifact failed integrity verification: {str(pe)}")
+
+            # 7. COMPLETED
             job.artifact_uri = str(result_path)
-            job.status = ArtifactStatus.COMPLETED
+            job.status = ArtifactStatus.COMPLETED.value
             job.completed_at = datetime.utcnow()
             self.db.commit()
             
             logger.info(f"Successfully completed artifact job {job_id}")
 
         except Exception as e:
-            logger.error(f"Failed artifact pipeline for {job_id}: {str(e)}")
+            logger.error(f"Failed artifact pipeline for {job_id} at stage {current_stage}: {str(e)}")
             logger.error(traceback.format_exc())
             
+            # Clean up partial file on failure: do not leave a downloadable partial artifact
+            if out_path.exists():
+                try:
+                    out_path.unlink()
+                except Exception:
+                    pass
+
             # Transition to FAILED
             try:
-                # Need fresh DB session state if previous failed
                 self.db.rollback()
                 job = self.repo.get_job(job_id)
                 if job:
-                    job.status = ArtifactStatus.FAILED
-                    job.error_message = str(e)
+                    job.status = ArtifactStatus.FAILED.value
+                    job.error_message = f"[{current_stage}] {str(e)}"
                     job.completed_at = datetime.utcnow()
+                    job.artifact_uri = None
                     self.db.commit()
             except Exception as inner_e:
                 logger.error(f"Failed to save FAILED status for job {job_id}: {str(inner_e)}")
