@@ -11,16 +11,20 @@ import asyncio
 
 router = APIRouter()
 
+# Session maker factory for background generation, defaults to SessionLocal
+background_session_maker = SessionLocal
+
 async def background_artifact_generation(job_id: str):
     """
     Background worker to run artifact generation with its own database session.
     """
-    db = SessionLocal()
+    db = background_session_maker()
     try:
         svc = ArtifactService(db)
         await svc.run_generation_pipeline(job_id)
     finally:
         db.close()
+
 
 @router.post("/generate", response_model=ArtifactJobRead)
 def create_artifact_job(

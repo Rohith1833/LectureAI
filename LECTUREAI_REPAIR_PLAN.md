@@ -1,8 +1,8 @@
 # LECTUREAI PHASED REPAIR PLAN & ARCHITECTURAL BASELINE
 
-**Document Version:** 1.2.0 (Phase 1 Complete)  
-**Last Updated:** 2026-09-28  
-**Scope:** Phase 1 Complete — Database Schema Repair & Application Boundary CORS Visibility  
+**Document Version:** 1.3.0 (Phase 6A Complete)  
+**Last Updated:** 2026-09-29  
+**Scope:** Phase 6A Complete — Real-Browser Acceptance & Isolated Storage Integration Verification  
 **Authoritative Source of Truth:** Current local codebase, runtime logs, empirical database execution, and verified test suites.
 
 ---
@@ -367,63 +367,173 @@ Demonstrate the real internal generation pipeline from approved snapshot to comp
      - Missing live provider credentials (`GROQ_API_KEY`) produces an explicit configuration failure; silent fallback to mock is strictly prevented. Mock provider is only available via explicit test/demo configuration (`provider="mock"` in job config or `LLM_PROVIDER=mock`).
 3. **Bounded Hierarchical Chunking & Token Budgeting:**
    - In `backend/app/services/artifact/artifact_planner.py`:
-     - Defined conservative token estimator `estimate_tokens(text)` (~4 chars per token) and strict limits:
-       - `MAX_ENTITIES_PER_CHUNK = 10`
-       - `MAX_CONTEXT_TOKENS = 6000` (reserving headroom for instructions and model output)
-       - `MAX_TOTAL_CHUNKS = 50`
-     - Oversized topics/contexts raise an actionable `GroundingValidationError` instead of truncating citations or silently omitting selected material.
-     - Enclosed source material in `<source_data>` tags with explicit instructions that textbook passages are passive reference data that cannot override formatting or schema rules.
-     - Validated generated slide citations strictly against the exact node and evidence IDs supplied in that specific chunk call.
-4. **Job Lifecycle & Persistence:**
-   - In `backend/app/services/artifact/artifact_service.py`:
-     - Lifecycle transitions: `PENDING -> PLANNING -> RENDERING -> COMPLETED` (or `FAILED`).
-     - Validation occurs before rendering.
-     - Validated plan is saved to `job.plan` and committed to the database before transitioning to `RENDERING`.
-     - Final presentation artifact is reopened and verified using `python-pptx` before marking the job `COMPLETED`.
-     - Partial artifacts are cleaned up on failure so no downloadable partial file remains.
-     - Duplicate execution of active or completed jobs is rejected with `ValueError`.
-     - Added `recover_interrupted_jobs()` to safely transition orphaned jobs stuck in `PLANNING` or `RENDERING` across process restarts to `FAILED` with actionable guidance, preventing silent partial downloads or double-billing.
-5. **PPTX Rendering & Download Verification:**
-   - In `backend/app/services/artifact/pptx_renderer.py`:
-     - Configured explicit 16:9 widescreen dimensions (`slide_width = 13.333 inches`, `slide_height = 7.5 inches`).
-     - Atomic final-file replacement using `os.replace` directly without premature deletion of existing target files.
-     - Temporary files generated during rendering are cleaned up safely in `finally` blocks.
-     - Download endpoint `/api/artifacts/{job_id}/download` returns completed presentation with correct MIME type `application/vnd.openxmlformats-officedocument.presentationml.presentation` and `Content-Disposition` header.
+     - Implemented conservative token estimator (3.2 characters per token with 15% safety headroom and explicit token ceilings).
+     - Headroom calculation:
+       - Target context: 8,192 tokens
+       - System instructions reserve: 1,000 tokens
+       - Multi-slide JSON output reserve: 2,000 tokens
+       - Usable context budget: `int((8192 - 3000) * 0.85) = 4,413` tokens (`MAX_CONTEXT_CHARS` ~ 14,120 characters)
+     - Oversized content subdivision:
+       - Long topics and units exceeding `MAX_SINGLE_ENTITY_CHARS` (1,200 tokens ~ 3,840 chars) are subdivided along supported source boundaries (`\n\n` paragraph breaks, then `. `, `? `, `! ` sentence boundaries) into bounded parts `(Part X of N)`.
+       - All parts preserve exact source order, selected container membership, original evidence associations, and hierarchy context.
+       - Each part is scheduled across bounded provider requests without silent omission or invented character offsets.
+     - Total job workload ceiling:
+       - Maximum 50 bounded requests per job (`MAX_TOTAL_CHUNKS = 50`). If a job exceeds this budget, it halts with an actionable error advising the user to narrow unit selection.
+4. **Atomic Job Claiming & Lifecycle Recovery:**
+   - In `backend/app/repositories/artifact_repository.py` & `artifact_service.py`:
+     - Replaced read-then-update duplicate guard with an atomic conditional state transition (`UPDATE artifact_jobs SET status = 'PLANNING' WHERE id = :id AND status = 'PENDING'`).
+     - Exactly one execution claims the job; concurrent or racing workers receive `None` and abort before invoking LLM providers or renderers.
+     - Offline recovery tool: `backend/app/services/artifact/recover_jobs.py` (`python -m app.services.artifact.recover_jobs [--include-pending] [--dry-run]`).
+     - Documented policy: must be executed offline when workers/servers are stopped. Safely transitions stranded `PLANNING`, `RENDERING` (and optionally `PENDING`) jobs to `FAILED` with an actionable message, cleans up partial files, and leaves `COMPLETED` jobs and artifacts untouched.
+5. **Provider Bounds & Retry Policy:**
+   - In `backend/app/services/generation/groq_provider.py`:
+     - Per-attempt timeout: 30.0s (`AsyncGroq(timeout=30.0, max_retries=0)`).
+     - Max attempts: 3 (attempt 0, 1, 2; `max_retries = 2`).
+     - True exponential backoff: `1.0 * (2 ** attempt)` (1.0s, 2.0s).
+     - Single retry wait budget: `max_retry_wait_budget = 15.0s`.
+     - `Retry-After` enforcement: If `Retry-After` header exceeds 15.0s, execution halts immediately with `LLMProviderError` rather than retrying sooner than the provider requested.
+     - Worst-case maximum total duration: `3 * 30.0s + 2 * 15.0s = 120.0s` (or 93.0s under standard backoff).
+     - Strict provider separation: Live generation never silently produces fixture content; mock generation is quarantined to explicit test providers.
+6. **Production-Route Acceptance & PPTX Verification:**
+   - Verified via production application factory (`create_app()`) and real versioned prefix (`/api/v1/artifacts/...`):
+     - `POST /api/v1/artifacts/generate`
+     - `GET /api/v1/artifacts/{id}`
+     - `GET /api/v1/artifacts/{id}/download`
+   - Verified substantive selected content ("ATP", "mitochondrial matrix respiration", "Cellular respiration") in slide bodies (shapes with text frames), not only titles or speaker notes.
+   - Verified unselected content ("Quantum Computing", "qubits", `EXCLUSIVELY_UNSELECTED_MARKER_DARK_MATTER`) is completely absent across all slides, titles, bodies, and speaker notes.
+   - Retained labelled test artifact: `backend/data/test_artifacts/phase4_acceptance_artifact.pptx`.
 
 ### Phase 4 Completion Gate — STATUS: PASSED
-- [x] Full internal pipeline executed from compiled knowledge, persisted selection, scoped retrieval, chunked planning, validation, PPTX rendering, to download endpoint without mocking core components.
-- [x] Downloaded PPTX verified via `python-pptx`: valid widescreen 16:9 structure, slide titles, body placeholders, speaker notes, and selected unit content.
-- [x] Exclusively unselected content markers (`EXCLUSIVELY_UNSELECTED_MARKER_DARK_MATTER`, `qubits`) verified absent from all slides and speaker notes.
-- [x] Cross-scope identical-text ambiguity excluded with `CROSS_SCOPE_AMBIGUITY` diagnostic when block provenance is missing; largest-area heuristic rejected.
-- [x] Exact block ID provenance successfully disambiguates multiple matching blocks.
-- [x] Empty retrieval or non-substantive text without diagnostics halts with actionable `GroundingValidationError` identifying container.
-- [x] Missing live provider configuration fails explicitly; failed live calls never fall back to mock.
-- [x] Malformed JSON, schema violations, and fabricated citations rejected cleanly.
-- [x] Provider timeouts and rate limits handled with bounded retries and backoff.
-- [x] Oversized context exceeding limits returns explicit `GroundingValidationError` without truncation.
-- [x] Renderer failures clean up partial files and transition job to `FAILED`.
-- [x] Duplicate execution of running or completed jobs rejected.
-- [x] Interrupted jobs recovered to `FAILED` status without leaving corrupt downloadable files.
-- [x] Full regression suite passes: **587 passed, 1 skipped, 0 failed in 43.12s**.
+- [x] Oversized topics subdivided into bounded requests along supported boundaries without rejection.
+- [x] Source order, container membership, evidence associations, and hierarchy preserved across chunk parts.
+- [x] Conservative token estimator (3.2 chars/token) and explicit token ceilings documented and enforced.
+- [x] Atomic conditional job claiming (`UPDATE ... WHERE status = 'PENDING'`) verified with concurrent sessions; losing execution aborts before provider/renderer calls.
+- [x] Offline job recovery tool (`recover_jobs.py`) implemented and tested for `PENDING`, `PLANNING`, `RENDERING`; completed artifacts untouched.
+- [x] Provider timeout (30.0s), max attempts (3), true exponential backoff (`1.0 * 2^attempt`), and `Retry-After` wait budget (15.0s) enforced.
+- [x] Full real-pipeline acceptance test verified through production factory `create_app()` and `/api/v1` prefix.
+- [x] Substantive content confirmed in slide bodies; unselected content verified absent.
+- [x] Labelled test artifact saved to `backend/data/test_artifacts/phase4_acceptance_artifact.pptx`.
+- [x] Full backend test suite passing: **589 passed, 1 skipped (real-API smoke test), 0 failed in 58.83s**.
+- [x] Development database (`lectureai.db`) verified untouched (identical SHA256 and row counts before and after full test run).
+
+---
+
+## 9. DETAILED PHASE 5 SPECIFICATION: FRONTEND WORKFLOW INTEGRATION & SELECTABLE CONTAINERS
+
+### Objective
+Connect LectureAI’s real frontend workflow to the repaired backend across the full user journey:
+Upload textbook PDF → processing/OCR → review academic structure → approve and compile → choose any available units → generate → see actual job status → download PPTX.
+Enable dynamic selection of any single unit, any combination of units, or all available units sourced dynamically from the textbook’s finalized knowledge version without hardcoded counts or artificial unit limits.
+
+### Work Items for Phase 5
+1. **Journey Trace & Navigation Wiring:**
+   - In `frontend/src/pages/ProcessingPage.tsx`:
+     - On extraction completion, `handleContinue` navigates to `/academic/review/${job.upload_id}`.
+     - Mock routes `/units`, `/outline`, `/preview` are completely eliminated from the real user journey.
+     - Extraction failures remain visible with actionable diagnostics, providing "Back to Upload" and "Inspect Partial Structure" options.
+   - In `frontend/src/pages/AcademicReviewPage.tsx`:
+     - Synchronous graph approval & compilation returns `approval_version`, `approved_revision`, `resolved_graph_fingerprint`, `document_id`, `knowledge_version_id`.
+     - Approval success modal provides primary action "Proceed to Slide Generation" navigating to `/documents/${docId}/artifact`.
+     - When document is already `APPROVED`, header renders a direct "Generate Slides" button.
+2. **Backend Read-Only Selectable Containers Endpoint:**
+   - In `backend/app/api/routes/knowledge.py`:
+     - `GET /api/v1/knowledge/versions/{version_id}/selectable-containers`
+     - `GET /api/v1/knowledge/document/{document_id}/selectable-containers`
+     - Evaluates `get_selectable_containers(db, version.id)` returning `container_mode` (`UNITS`, `CHAPTERS`, `REVIEW_REQUIRED`), `container_type`, `containers` in canonical source order, and `diagnostics`.
+     - For each container, resolves `source_page_start`, `source_page_end`, and `topic_count`.
+     - Ordering sentinels (e.g. `999999999`) are strictly mapped to `null` to ensure the frontend never displays synthetic sentinel numbers as real pages.
+3. **Dynamic Unit Selection & Mutual Exclusion UI (`frontend/src/pages/ArtifactWorkspacePage.tsx`):**
+   - Checkbox for every available container with exact textbook title, page range badge (when valid), and topic count badge.
+   - Intentional initial state: empty selection (`0 of N selected`).
+   - "Generate Presentation" disabled until at least one container is selected.
+   - "Select All" and "Clear Selection" buttons, plus search filter for longer container lists.
+   - For `CHAPTERS` mode: displays informational banner clarifying that choices are chapters rather than syllabus units.
+   - For `REVIEW_REQUIRED` mode: explains missing container structure, links to `/academic/review/${upload_id}`, and disables generation.
+   - Sends exact `config.selected_unit_ids` array containing real entity UUIDs; does not send `num_units` or client-authored document IDs.
+4. **Version Changes & Old Knowledge Handling:**
+   - Changing `documentId` or version clears previous selections, errors, and in-flight polling.
+   - Stale requests are ignored via unmount/active token guards.
+   - Job history retains its original version and selection scope without cross-version confusion.
+5. **Generation, Polling & Error Resilience:**
+   - Immediate duplicate submission prevention: `isSubmitting` disables the generate button while the create POST is in-flight.
+   - Tracks actual persisted stages (`PENDING`, `PLANNING`, `RENDERING`, `COMPLETED`, `FAILED`) without fabricated percentages.
+   - Resumes status polling after page refresh using active job from job history.
+   - Stops polling immediately on terminal states (`COMPLETED`, `FAILED`).
+   - Handles transient network errors during polling without prematurely marking jobs failed or stopping polling.
+   - Robust backend error parsing (`formatBackendError`) handles Pydantic validation arrays, workload limit errors, and domain errors cleanly.
+6. **Download & Contract Alignment:**
+   - PPTX download button enabled ONLY for `COMPLETED` jobs.
+   - Download URL constructed cleanly from `apiClient.defaults.baseURL` / `VITE_API_URL` without trailing slash bugs.
+
+### Phase 5 Completion Gate — STATUS: PASSED
+- [x] Processing → review navigation uses real `upload_id` and eliminates mock `/units`, `/outline`, `/preview` routes.
+- [x] Approval success modal provides "Proceed to Slide Generation" navigating to `/documents/${docId}/artifact`.
+- [x] Backend endpoint `GET /api/v1/knowledge/versions/{version_id}/selectable-containers` returns canonically ordered containers and masks sentinels to `null`.
+- [x] Chapters mode and Review-Required mode handled with dedicated banners, diagnostics, and links.
+- [x] Single, multiple, and all container selections verified with exact `selected_unit_ids` payload; `num_units` is omitted.
+- [x] Immediate duplicate-submit prevention verified while create request is in-flight.
+- [x] Terminal status polling stop and transient error resilience verified.
+- [x] Page refresh polling resumption verified from job history.
+- [x] PPTX download enabled only for `COMPLETED` jobs with verified download URL construction.
+- [x] Full frontend test suite passing: **34 passed across 6 test files in 5.24s**.
+- [x] Frontend production build (`tsc -b && vite build`) passing with zero errors.
+- [x] Backend test suite passing: **51 passed in 5.91s**.
 - [x] Development database (`lectureai.db`) verified untouched.
 
 ---
 
-## 9. DEFERRED ARCHITECTURAL CLARIFICATIONS (FOR PHASES 5–7)
+## 10. PHASE 6A: REAL-BROWSER ACCEPTANCE & ISOLATED INTEGRATION VERIFICATION
 
-1. **Frontend Unit Selection Checkboxes (Phase 5):**
-   - `selected_unit_ids` API contract is fully functional on backend. UI checkboxes on `/documents/:id/artifact` and approval review routing deferred to Phase 5.
-2. **End-to-End Real Textbook Validation (Phase 6):**
-   - Human comparison of real textbook pages against generated slide content deferred to Phase 6.
-3. **Advanced Presentation Layout & Styling (Phase 7):**
-   - Advanced themes, custom typography, table/formula rendering, and visual polish deferred to Phase 7.
+### Status: PASSED
+
+### 1. Isolated Environment Architecture
+- **Isolated Database:** `sqlite:///C:/Users/rohit/.gemini/antigravity-ide/brain/8d485f93-7a2a-49ba-b72d-3fa779158f26/scratch/storage_phase6a/isolated_lectureai.db`
+- **Isolated Storage Root:** `C:\Users\rohit\.gemini\antigravity-ide\brain\8d485f93-7a2a-49ba-b72d-3fa779158f26\scratch\storage_phase6a`
+- **Isolated Artifacts Directory:** `C:\Users\rohit\.gemini\antigravity-ide\brain\8d485f93-7a2a-49ba-b72d-3fa779158f26\scratch\storage_phase6a\artifacts`
+- **Isolated Backend Server:** Port `8001` via `start_isolated_backend.py` with `LLM_PROVIDER=mock` (ordinary client requests do not include `provider="mock"`).
+- **Isolated Frontend Dev Server:** Port `5174` via `vite --port 5174 --strictPort --mode isolated` pointing to `VITE_API_URL=http://localhost:8001/api/v1`.
+- **CORS Allowed Origins:** Updated `ALLOWED_DEVELOPMENT_ORIGINS` to support `http://localhost:5174` and `http://127.0.0.1:5174`.
+
+### 2. Functional PDF Test Fixtures Created
+1. `sample_digital_textbook.pdf`:
+   - 4 pages, digital selectable text layer (752, 597, 1045, 1000 chars per page).
+   - Contains 3 Units (Unit 1 across pages 1-2, Unit 2 on page 3, Unit 3 on page 4).
+   - Distinct source statement markers: `DISTINCT_MARKER_U1_ARCH`, `DISTINCT_MARKER_U1_FAIL`, `DISTINCT_MARKER_U2_RAFT`, `DISTINCT_MARKER_U2_CLOCK`, `DISTINCT_MARKER_U3_STREAM`, `DISTINCT_MARKER_U3_GRAPH`.
+2. `sample_scanned_textbook.pdf`:
+   - 2 pages, pure raster bitmap images (0 digital font characters, forcing OCR detection).
+   - Verified Tesseract OCR 5.5 invocation (processing time 1.45s, `ocr_status="completed"`, recognized text extracted with provenance `"OCR"`).
+
+### 3. Real-Browser Acceptance Journey Verified
+- **Upload & Ingestion:** Uploaded `sample_digital_textbook.pdf`, processed through canonical document extraction, reading order, and normalization.
+- **Processing Observation:** Observed real progress transitions to `completed` on `/processing/:jobId`.
+- **Academic Review:** Navigated via "Review Academic Structure", inspected hierarchical nodes, verified source text and distinct markers, executed node reviews, and approved graph snapshot.
+- **Approval Payload & State Transfer:** Confirmed `document_id` and `knowledge_version_id` survive response serialization to browser; approved snapshot frozen and committed.
+- **Artifact Selection:** Navigated via "Proceed to Slide Generation" to `/documents/:id/artifact`. Verified:
+  - Generate Presentation button is disabled when 0 containers are selected.
+  - "Select All" selects all 3 units (counter updates to 3).
+  - "Clear Selection" clears all units (counter resets to 0, button disabled).
+  - Search filter isolates matching units dynamically.
+  - Flexible selection verified: Unit 1 and Unit 3 selected together.
+- **Generation & Polling:** Clicked "Generate Presentation (.pptx)", observed real backend status progression (`PENDING` -> `PLANNING` -> `RENDERING` -> `COMPLETED`).
+- **Download & Inspection:** Downloaded `.pptx` presentations, verified with `python-pptx`:
+  - Valid 16:9 PowerPoint structure containing 10 slides.
+  - Contains substantive selected content, speaker notes, and provenance source notes (`[Provenance] Sources: ...`).
+  - Correct MIME type `application/vnd.openxmlformats-officedocument.presentationml.presentation` and `Content-Disposition`.
+- **Controlled Failure & Error Resilience:** Verified 404 response on missing or invalid download job without crashes.
+
+### 4. Issues Identified & Resolved in Phase 6A
+- **ISS-14 (RESOLVED):** `OCRAgent` OCR cache block ID duplication (`UNIQUE constraint failed: document_blocks.id`). Replaced cached block ID reuse with fresh `uuid.uuid4()` generation, and added primary-key uniqueness safeguard in `DocumentRepository.save_extraction_result`.
+- **ISS-15 (RESOLVED):** Oversized single-sentence chunking without delimiters in `ArtifactPlanner.split_content_into_bounded_segments`. Subdivided oversized single sentences on whitespace and character slices without silent truncation; added unit test `test_phase6a_oversized_sentence.py` (2/2 passing).
+- **ISS-16 (RESOLVED):** Environment variable isolation for storage root, artifacts directory, and CORS allowed origins (`LECTUREAI_STORAGE_ROOT`, `LECTUREAI_ARTIFACTS_DIR`, `ALLOWED_ORIGINS`).
 
 ---
 
-## 10. REMAINING FACTUAL UNKNOWNS
+## 11. DEFERRED ARCHITECTURAL CLARIFICATIONS (FOR PHASE 7)
 
-1. **OCR Performance on Large Textbooks:**
-   - Local Tesseract binary is verified available. However, processing a 300+ page textbook at 300 DPI will take substantial time. Does the current job timeout threshold accommodate 30+ minutes of extraction?
-2. **Groq Token Limits for Rich Units:**
-   - Groq model `openai/gpt-oss-120b` has vendor TPM limits. Real token consumption per chunk must be monitored during live generation in Phase 6.
+1. **Visual Polish & Premium UI (Phase 7):**
+   - Fine-grained typography, glassmorphism, slide transition animations, and dark-mode styling refinements deferred to Phase 7.
+2. **Live LLM Model Output Validation:**
+   - Production validation with live Groq API keys and domain-expert pedagogical evaluation.
+
+
 

@@ -744,14 +744,17 @@ class AcademicReviewService:
             # 11. Compile snapshot into finalized KnowledgeVersion
             from app.services.intelligence.knowledge_builder import KnowledgeBuilder
             kb = KnowledgeBuilder(self.db)
-            kb.compile_snapshot(snapshot.id, reviewer_id=user_id)
+            compiled_version = kb.compile_snapshot(snapshot.id, reviewer_id=user_id)
 
             self.db.commit()
             return {
                 "success": True,
                 "approval_version": f"v{next_version}",
                 "approved_revision": expected_revision,
-                "resolved_graph_fingerprint": result.resolved_graph_fingerprint
+                "resolved_graph_fingerprint": result.resolved_graph_fingerprint,
+                "document_id": doc.id,
+                "knowledge_version_id": compiled_version.id,
+                "snapshot_id": snapshot.id
             }
         except Exception as e:
             self.db.rollback()

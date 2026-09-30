@@ -33,7 +33,8 @@ import {
   Shield,
   Award,
   User,
-  Calendar
+  Calendar,
+  ArrowRight
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InfoCard } from "@/components/ui/card";
@@ -223,7 +224,9 @@ export default function AcademicReviewPage() {
         pipeline_run_id: summaryQuery.data?.pipeline_run_id || "",
         approval_timestamp: Date.now() / 1000,
         reviewer_id: "trusted_reviewer_user",
-        resolved_graph_fingerprint: data.resolved_graph_fingerprint
+        resolved_graph_fingerprint: data.resolved_graph_fingerprint,
+        document_id: data.document_id || summaryQuery.data?.document_id || uploadId,
+        knowledge_version_id: data.knowledge_version_id
       });
       setShowApprovalConfirm(false);
       setOccError(null);
@@ -499,9 +502,18 @@ export default function AcademicReviewPage() {
 
         <div className="flex items-center gap-2">
           {summary.document_review_state === "APPROVED" ? (
-            <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 px-3 py-1.5 rounded-lg border border-emerald-250 flex items-center gap-1.5">
-              <Check className="size-4" /> Snapshot Approved
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 px-3 py-1.5 rounded-lg border border-emerald-250 flex items-center gap-1.5">
+                <Check className="size-4" /> Snapshot Approved
+              </span>
+              <Button
+                data-testid="header-generate-slides-button"
+                onClick={() => navigate(`/documents/${summary?.document_id || summary?.upload_id}/artifact`)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer px-4 py-1.5 h-8 text-xs font-bold gap-1"
+              >
+                Generate Slides <ArrowRight className="size-3.5" />
+              </Button>
+            </div>
           ) : readinessQuery.data?.eligible ? (
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 px-3 py-1.5 rounded-lg border border-emerald-250 flex items-center gap-1.5">
@@ -1177,12 +1189,27 @@ export default function AcademicReviewPage() {
               </div>
             </div>
 
-            <div className="flex justify-center pt-2">
+            <div className="flex flex-col sm:flex-row justify-center gap-2 pt-2">
               <Button
-                onClick={() => setApprovalSuccess(null)}
-                className="bg-violet-600 hover:bg-violet-750 text-white cursor-pointer px-6 text-xs font-bold"
+                data-testid="proceed-to-slides-button"
+                onClick={() => {
+                  const targetDocId =
+                    approvalSuccess.document_id ||
+                    summary?.document_id ||
+                    uploadId;
+                  setApprovalSuccess(null);
+                  navigate(`/documents/${targetDocId}/artifact`);
+                }}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer px-4 text-xs font-bold gap-1.5"
               >
-                Done
+                Proceed to Slide Generation <ArrowRight className="size-3.5" />
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setApprovalSuccess(null)}
+                className="cursor-pointer px-4 text-xs font-semibold"
+              >
+                Stay on Review
               </Button>
             </div>
           </div>

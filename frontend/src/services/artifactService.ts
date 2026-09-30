@@ -18,6 +18,8 @@ export const artifactService = {
   },
 
   getDownloadUrl(jobId: string): string {
-    return `${import.meta.env.VITE_API_URL}/artifacts/${jobId}/download`;
+    const base = apiClient.defaults.baseURL || import.meta.env.VITE_API_URL || "/api/v1";
+    const cleanBase = String(base).replace(/\/+$/, "");
+    return `${cleanBase}/artifacts/${jobId}/download`;
   },
 };

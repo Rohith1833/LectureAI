@@ -29,6 +29,8 @@ from app.models.artifact import ArtifactJob
 import os
 import pptx
 
+ARTIFACTS_DIR = Path(os.environ.get("LECTUREAI_ARTIFACTS_DIR", "data/artifacts"))
+
 def _get_provider(config: Optional[dict] = None):
     cfg = config or {}
     provider_name = cfg.get("provider") or getattr(settings, "LLM_PROVIDER", None) or os.environ.get("LLM_PROVIDER")
@@ -99,26 +101,33 @@ class ArtifactService:
         jobs = self.repo.list_jobs(upload_id)
         return [ArtifactJobRead.model_validate(j) for j in jobs]
 
-    def recover_interrupted_jobs(self) -> int:
+    def recover_interrupted_jobs(self, include_pending: bool = False) -> int:
         """
-        Scans for jobs left in PLANNING or RENDERING state (e.g. after a process crash/restart).
+        Scans for artifact jobs stuck in transitional states (PLANNING, RENDERING,
+        and optionally PENDING if include_pending=True) after server shutdown or worker restart.
         Transitions them to FAILED with an explicit actionable message.
         Does NOT automatically resume or charge for interrupted work.
+        Completed artifacts and jobs are never modified.
         Returns the count of recovered jobs.
         """
+        target_statuses = [ArtifactStatus.PLANNING.value, ArtifactStatus.RENDERING.value]
+        if include_pending:
+            target_statuses.append(ArtifactStatus.PENDING.value)
+
         in_flight_jobs = self.db.query(ArtifactJob).filter(
-            ArtifactJob.status.in_([ArtifactStatus.PLANNING.value, ArtifactStatus.RENDERING.value])
+            ArtifactJob.status.in_(target_statuses)
         ).all()
         recovered = 0
         for job in in_flight_jobs:
+            prior_status = job.status
             job.status = ArtifactStatus.FAILED.value
             job.error_message = (
-                f"Job execution was interrupted while in {job.status} stage "
+                f"Job execution was interrupted while in {prior_status} stage "
                 "(server shutdown or background worker termination). "
                 "Please submit a new generation request."
             )
             job.completed_at = datetime.utcnow()
-            out_path = Path("data/artifacts") / f"artifact_{job.id}.pptx"
+            out_path = ARTIFACTS_DIR / f"artifact_{job.id}.pptx"
             if out_path.exists():
                 try:
                     out_path.unlink()
@@ -134,27 +143,25 @@ class ArtifactService:
         """
         End-to-end background orchestration of artifact generation:
         PENDING -> PLANNING -> RENDERING -> COMPLETED
+        Uses atomic conditional state transitions to prevent concurrent execution races.
         """
         logger.info(f"Starting background pipeline for artifact job {job_id}")
         current_stage = "INITIALIZATION"
-        out_path = Path("data/artifacts") / f"artifact_{job_id}.pptx"
+        out_path = ARTIFACTS_DIR / f"artifact_{job_id}.pptx"
         
         try:
-            # Check current job state and reject duplicate execution
-            existing_job = self.repo.get_job(job_id)
-            if not existing_job:
-                logger.error(f"Job {job_id} not found when starting pipeline.")
-                return
-            if existing_job.status in (ArtifactStatus.PLANNING.value, ArtifactStatus.RENDERING.value, ArtifactStatus.COMPLETED.value):
-                logger.warning(f"Job {job_id} is already in {existing_job.status} state. Rejecting duplicate execution.")
+            # Atomically claim the PENDING job for planning
+            job = self.repo.claim_job_for_planning(job_id)
+            if not job:
+                existing_job = self.repo.get_job(job_id)
+                status_desc = existing_job.status if existing_job else "NONEXISTENT"
+                logger.warning(
+                    f"Job {job_id} could not be claimed for execution (current status: {status_desc}). "
+                    "Rejecting duplicate execution."
+                )
                 return
 
-            # Transition to PLANNING
             current_stage = "PLANNING"
-            job = self.repo.update_job_status(job_id, ArtifactStatus.PLANNING)
-            if not job:
-                logger.error(f"Job {job_id} not found when transitioning to PLANNING.")
-                return
                 
             # 1. Initialize services
             knowledge_repo = KnowledgeRepository(self.db)
@@ -205,7 +212,7 @@ class ArtifactService:
             job = self.repo.update_job_status(job_id, ArtifactStatus.RENDERING)
             
             # 5. Rendering (Phase 9B)
-            out_dir = Path("data/artifacts")
+            out_dir = ARTIFACTS_DIR
             out_dir.mkdir(parents=True, exist_ok=True)
             
             result_path = renderer.render(plan, str(out_path))

@@ -59,7 +59,11 @@ export default function ProcessingPage() {
   const job = data?.data;
 
   const handleContinue = () => {
-    navigate("/units");
+    if (job?.upload_id) {
+      navigate(`/academic/review/${job.upload_id}`);
+    } else {
+      navigate("/upload");
+    }
   };
 
   const handleRetryUpload = () => {
@@ -230,9 +234,21 @@ export default function ProcessingPage() {
       {(isCompleted || isFailed) && (
         <div className="flex justify-center gap-4 pt-4 animate-in fade-in zoom-in-95 duration-300">
           {isFailed && (
-            <Button onClick={handleRetryUpload} size="lg" variant="outline">
-              Back to Upload
-            </Button>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Button onClick={handleRetryUpload} size="lg" variant="outline">
+                Back to Upload
+              </Button>
+              {job?.upload_id && (
+                <Button
+                  onClick={() => navigate(`/academic/review/${job.upload_id}`)}
+                  size="lg"
+                  variant="outline"
+                  className="gap-2 border-red-500/30 text-red-700 dark:text-red-400"
+                >
+                  Inspect Partial Structure
+                </Button>
+              )}
+            </div>
           )}
           {isCompleted && (
             <div className="flex flex-col sm:flex-row gap-3">
@@ -249,9 +265,10 @@ export default function ProcessingPage() {
               <Button
                 onClick={handleContinue}
                 size="lg"
+                data-testid="review-structure-button"
                 className="gap-2 bg-violet-600 hover:bg-violet-700 text-white dark:bg-violet-500 dark:hover:bg-violet-600 font-semibold shadow-lg cursor-pointer"
               >
-                Review Extracted Chapters <ArrowRight className="size-4" />
+                Review Academic Structure <ArrowRight className="size-4" />
               </Button>
             </div>
           )}

@@ -172,6 +172,28 @@ class TestGenerationGroq(unittest.TestCase):
 
     self.assertIn("Failed to parse model response as JSON", str(context.exception))
 
+  @patch("app.services.generation.groq_provider.AsyncGroq")
+  def test_09_rate_limit_exceeding_retry_after_budget_stops_immediately(self, mock_client_cls):
+    """Verify provider halts immediately when Retry-After exceeds max_retry_wait_budget."""
+    mock_client = MagicMock()
+    mock_client_cls.return_value = mock_client
+    
+    mock_response = MagicMock(status_code=429)
+    mock_response.headers = {"retry-after": "60.0"}
+    mock_chat = AsyncMock(side_effect=groq.RateLimitError(
+        message="Rate limit reached",
+        response=mock_response,
+        body=None
+    ))
+    mock_client.chat.completions.create = mock_chat
+
+    provider = GroqProvider(api_key=self.api_key, max_retry_wait_budget=15.0)
+    with self.assertRaises(LLMProviderError) as context:
+      asyncio.run(provider.generate(self.request))
+
+    self.assertIn("exceeds maximum permitted retry-wait budget", str(context.exception))
+    self.assertEqual(mock_chat.call_count, 1)  # Stopped on attempt 0 without retrying sooner than provider requested
+
   def test_08_manual_smoke_test_skipped_by_default(self):
     """Manual smoke-test mapping verifies actual API connection. Skipped by default."""
     import os
@@ -186,3 +208,4 @@ class TestGenerationGroq(unittest.TestCase):
     )
     response = asyncio.run(provider.generate(req))
     self.assertEqual(response.raw_response.strip(), "ACK")
+

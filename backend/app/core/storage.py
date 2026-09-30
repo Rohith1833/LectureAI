@@ -4,7 +4,7 @@ import os
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Central storage paths
-STORAGE_ROOT = os.path.join(APP_DIR, "storage")
+STORAGE_ROOT = os.environ.get("LECTUREAI_STORAGE_ROOT", os.path.join(APP_DIR, "storage"))
 UPLOADS_DIR = os.path.join(STORAGE_ROOT, "uploads")
 METADATA_DIR = os.path.join(STORAGE_ROOT, "metadata")
 JOBS_DIR = os.path.join(STORAGE_ROOT, "jobs")

@@ -1,4 +1,5 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple, Set
+from dataclasses import dataclass
 import json
 
 from loguru import logger
@@ -15,15 +16,167 @@ from app.services.intelligence.knowledge_ordering import sort_entities_by_source
 
 import re
 
-# Chunking & Workload Limits
-MAX_ENTITIES_PER_CHUNK = 10
-MAX_CONTEXT_TOKENS = 6000  # Context budget reserving room for instructions (~1000) and output (~2000)
-MAX_CONTEXT_CHARS = MAX_CONTEXT_TOKENS * 4
-MAX_TOTAL_CHUNKS = 50
+# =============================================================================
+# CHUNKING, TOKEN BUDGETING & WORKLOAD LIMITS
+# =============================================================================
+# Conservative Token Estimator:
+# Standard English prose averages ~4 characters per token. Technical, scientific,
+# mathematical, and dense textbook material with symbols, punctuation, and identifiers
+# frequently averages ~3.0 - 3.3 characters per token. We use 3.2 characters per token
+# with an explicit ceiling to guarantee a conservative upper bound.
+ESTIMATED_CHARS_PER_TOKEN = 3.2
 
 def estimate_tokens(text: str) -> int:
-    """Conservative token estimator (~4 chars per token)."""
-    return (len(text) + 3) // 4
+    """
+    Conservative token estimator for textbook prose and academic hierarchy.
+    Uses 3.2 chars/token with a safety ceiling to avoid underestimating token usage
+    on technical terminology, notation, and formatting markers.
+    """
+    if not text:
+        return 0
+    return int(len(text) / ESTIMATED_CHARS_PER_TOKEN) + 1
+
+# Model Context Window & Budgeting:
+# Configured model default is `openai/gpt-oss-120b` (or other LLM specified in settings).
+# A standard target context window is 8,192 tokens.
+# We reserve headroom for system instructions (~1,000 tokens), structured JSON schema
+# definition, and comprehensive multi-slide model output (~2,000 tokens), plus a 15% safety margin.
+TARGET_MODEL_CONTEXT_TOKENS = 8192
+INSTRUCTION_RESERVE_TOKENS = 1000
+OUTPUT_RESERVE_TOKENS = 2000
+SAFETY_MARGIN_RATIO = 0.15
+
+# Usable input context budget: (8192 - 3000) * 0.85 = ~4413 tokens
+MAX_CONTEXT_TOKENS = int((TARGET_MODEL_CONTEXT_TOKENS - INSTRUCTION_RESERVE_TOKENS - OUTPUT_RESERVE_TOKENS) * (1 - SAFETY_MARGIN_RATIO))
+# Maximum characters for chunk context string based on 3.2 chars/token (~14,120 chars)
+MAX_CONTEXT_CHARS = int(MAX_CONTEXT_TOKENS * ESTIMATED_CHARS_PER_TOKEN)
+
+# Entity limits per chunk
+MAX_ENTITIES_PER_CHUNK = 10
+
+# Maximum single-entity content size before subdividing into bounded parts (~1,200 tokens)
+MAX_SINGLE_ENTITY_CHARS = int(1200 * ESTIMATED_CHARS_PER_TOKEN)  # ~3840 characters
+
+# Maximum total workload for an entire artifact generation job (prevent runaway jobs)
+MAX_TOTAL_CHUNKS = 50
+
+
+def split_content_into_bounded_segments(
+    content: str,
+    max_chars: int = MAX_SINGLE_ENTITY_CHARS
+) -> List[Tuple[str, str]]:
+    """
+    Subdivides long content along supported source boundaries:
+    1. Paragraph boundaries (`\n\n`)
+    2. Sentence boundaries (`. `, `? `, `! `)
+    
+    Preserves:
+    - Exact source order.
+    - All textual material without truncation or omission.
+    - Does not invent character offsets.
+    
+    Returns a list of tuples: (part_suffix, segment_text).
+    If no split is needed, returns [("", content)].
+    If split, returns [(" (Part 1 of N)", seg_1), (" (Part 2 of N)", seg_2), ...].
+    """
+    text = (content or "").strip()
+    if not text or len(text) <= max_chars:
+        return [("", text)]
+
+    paragraphs = text.split("\n\n")
+    segments: List[str] = []
+    current_segment: List[str] = []
+    current_len = 0
+
+    for para in paragraphs:
+        para = para.strip()
+        if not para:
+            continue
+        
+        # If a single paragraph exceeds max_chars, split on sentence boundaries
+        if len(para) > max_chars:
+            if current_segment:
+                segments.append("\n\n".join(current_segment))
+                current_segment = []
+                current_len = 0
+
+            # Split on sentence ends followed by whitespace
+            sentences = re.split(r'(?<=[.?!])\s+', para)
+            sent_accum: List[str] = []
+            sent_len = 0
+            for sent in sentences:
+                sent = sent.strip()
+                if not sent:
+                    continue
+                if len(sent) > max_chars:
+                    if sent_accum:
+                        segments.append(" ".join(sent_accum))
+                        sent_accum = []
+                        sent_len = 0
+                    # Break oversized single sentence on whitespace without silent truncation
+                    words = re.split(r'(\s+)', sent)
+                    clause_accum: List[str] = []
+                    clause_len = 0
+                    for word in words:
+                        if not word:
+                            continue
+                        if len(word) > max_chars:
+                            if clause_accum:
+                                segments.append("".join(clause_accum).strip())
+                                clause_accum = []
+                                clause_len = 0
+                            for c_idx in range(0, len(word), max_chars):
+                                segments.append(word[c_idx:c_idx + max_chars])
+                            continue
+                        if clause_len + len(word) > max_chars and clause_accum:
+                            segments.append("".join(clause_accum).strip())
+                            clause_accum = []
+                            clause_len = 0
+                        clause_accum.append(word)
+                        clause_len += len(word)
+                    if clause_accum:
+                        text_rem = "".join(clause_accum).strip()
+                        if text_rem:
+                            sent_accum.append(text_rem)
+                            sent_len += len(text_rem) + 1
+                else:
+                    if sent_len + len(sent) + 1 > max_chars and sent_accum:
+                        segments.append(" ".join(sent_accum))
+                        sent_accum = []
+                        sent_len = 0
+                    sent_accum.append(sent)
+                    sent_len += len(sent) + 1
+            if sent_accum:
+                segments.append(" ".join(sent_accum))
+        else:
+            if current_len + len(para) + 2 > max_chars and current_segment:
+                segments.append("\n\n".join(current_segment))
+                current_segment = []
+                current_len = 0
+            current_segment.append(para)
+            current_len += len(para) + 2
+
+    if current_segment:
+        segments.append("\n\n".join(current_segment))
+
+    if not segments:
+        return [("", text)]
+
+    if len(segments) == 1:
+        return [("", segments[0])]
+
+    total_parts = len(segments)
+    return [(f" (Part {i+1} of {total_parts})", seg) for i, seg in enumerate(segments)]
+
+
+@dataclass
+class PlannerChunkItem:
+    id: str
+    title: str
+    entity_type: Any
+    content: str
+    original_entity: Any
+
 
 def _is_trivial_or_heading(text: Optional[str]) -> bool:
     """Check if text is empty, trivial, just a heading, or only citation IDs."""
@@ -133,7 +286,7 @@ class ArtifactPlanner:
 
         final_plan = ArtifactPlan(slides=[])
         all_retrieval_diagnostics: List[str] = []
-        planned_descendant_ids = set()
+        planned_descendant_ids: Set[str] = set()
         total_chunks_planned = 0
 
         for container in selected_containers:
@@ -148,27 +301,62 @@ class ArtifactPlanner:
             desc_entities = [entity_map[did] for did in unplanned_desc_ids if did in entity_map]
             sorted_descendants = sort_entities_by_source_order(desc_entities)
 
-            if not sorted_descendants:
-                chunks = [[container]]
+            # Check if container itself has oversized content
+            container_segments = split_content_into_bounded_segments(container.content or "")
+
+            # Decompose all descendants into bounded entity segments preserving source order
+            expanded_descendants: List[PlannerChunkItem] = []
+            for desc in sorted_descendants:
+                desc_segments = split_content_into_bounded_segments(desc.content or "")
+                for suffix, seg_content in desc_segments:
+                    expanded_descendants.append(PlannerChunkItem(
+                        id=desc.id,
+                        title=f"{desc.title}{suffix}",
+                        entity_type=desc.entity_type,
+                        content=seg_content,
+                        original_entity=desc
+                    ))
+
+            # Assemble chunks respecting MAX_ENTITIES_PER_CHUNK and MAX_CONTEXT_CHARS
+            chunks: List[List[PlannerChunkItem]] = []
+            if not expanded_descendants:
+                # Container alone (split across chunks if container content itself was oversized)
+                for suffix, seg_content in container_segments:
+                    chunks.append([PlannerChunkItem(
+                        id=container.id,
+                        title=f"{container.title}{suffix}",
+                        entity_type=container.entity_type,
+                        content=seg_content,
+                        original_entity=container
+                    )])
             else:
-                chunks = []
-                current_chunk = [container]
-                current_chunk_chars = len(container.title) + len(container.content or "")
-                for desc in sorted_descendants:
-                    desc_chars = len(desc.title) + len(desc.content or "")
+                base_container_item = PlannerChunkItem(
+                    id=container.id,
+                    title=container.title,
+                    entity_type=container.entity_type,
+                    content=container_segments[0][1] if container_segments else (container.content or ""),
+                    original_entity=container
+                )
+                current_chunk = [base_container_item]
+                current_chunk_chars = len(base_container_item.title) + len(base_container_item.content)
+
+                for desc_item in expanded_descendants:
+                    desc_chars = len(desc_item.title) + len(desc_item.content)
                     if len(current_chunk) >= MAX_ENTITIES_PER_CHUNK or (current_chunk_chars + desc_chars > MAX_CONTEXT_CHARS and len(current_chunk) > 1):
                         chunks.append(current_chunk)
-                        current_chunk = [container]
-                        current_chunk_chars = len(container.title) + len(container.content or "")
-                    current_chunk.append(desc)
+                        current_chunk = [base_container_item]
+                        current_chunk_chars = len(base_container_item.title) + len(base_container_item.content)
+                    current_chunk.append(desc_item)
                     current_chunk_chars += desc_chars
+
                 if current_chunk:
                     chunks.append(current_chunk)
 
             total_chunks_planned += len(chunks)
             if total_chunks_planned > MAX_TOTAL_CHUNKS:
                 raise GroundingValidationError(
-                    f"Total job workload ({total_chunks_planned} chunks) exceeds maximum supported limit ({MAX_TOTAL_CHUNKS}). Please select fewer units."
+                    f"Total job workload ({total_chunks_planned} chunks) exceeds maximum supported limit ({MAX_TOTAL_CHUNKS} chunks). "
+                    "Please select fewer units or reduce topic scope."
                 )
 
             for chunk_idx, chunk_entities in enumerate(chunks):
@@ -227,7 +415,8 @@ class ArtifactPlanner:
                 # Collect source locations for affected entities
                 source_locs = []
                 for e in chunk_entities:
-                    for ev in getattr(e, "evidence", []):
+                    orig = getattr(e, "original_entity", e)
+                    for ev in getattr(orig, "evidence", []):
                         loc = f"page {ev.page_number}" if getattr(ev, "page_number", None) else "unknown page"
                         if getattr(ev, "source_anchor_key", None):
                             loc += f" block {ev.source_anchor_key}"

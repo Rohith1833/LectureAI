@@ -1,3 +1,4 @@
+import uuid
 from typing import List, Optional
 from sqlalchemy.orm import Session
 
@@ -68,10 +69,15 @@ class DocumentRepository:
             page_num_to_id[p.page_number] = db_page.id
 
         # 4. Persist Blocks
+        seen_block_ids = set()
         for b in result.blocks:
             page_id = page_num_to_id[b.page_number]
+            block_id = b.block_id
+            if not block_id or block_id in seen_block_ids:
+                block_id = str(uuid.uuid4())
+            seen_block_ids.add(block_id)
             db_block = DocumentBlock(
-                id=b.block_id,
+                id=block_id,
                 document_id=db_doc.id,
                 page_id=page_id,
                 page_number=b.page_number,

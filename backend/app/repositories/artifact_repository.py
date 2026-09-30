@@ -35,6 +35,24 @@ class ArtifactRepository:
     def list_jobs(self, upload_id: str) -> List[ArtifactJob]:
         return self.db.query(ArtifactJob).filter(ArtifactJob.upload_id == upload_id).order_by(ArtifactJob.created_at.desc()).all()
 
+    def claim_job_for_planning(self, job_id: str) -> Optional[ArtifactJob]:
+        """
+        Atomically claims a PENDING job for PLANNING using a conditional UPDATE.
+        Returns the updated ArtifactJob if successfully claimed by this session,
+        or None if the job is not in PENDING status (e.g. already claimed by another concurrent worker).
+        """
+        rows_updated = self.db.query(ArtifactJob).filter(
+            ArtifactJob.id == job_id,
+            ArtifactJob.status == ArtifactStatus.PENDING.value
+        ).update(
+            {"status": ArtifactStatus.PLANNING.value},
+            synchronize_session="fetch"
+        )
+        self.db.commit()
+        if rows_updated == 1:
+            return self.get_job(job_id)
+        return None
+
     def update_job_status(self, job_id: str, status: ArtifactStatus, error_message: Optional[str] = None) -> ArtifactJob:
         job = self.get_job(job_id)
         if not job:

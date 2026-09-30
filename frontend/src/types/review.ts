@@ -29,6 +29,8 @@ export interface ApprovedSnapshotInfo {
   approval_timestamp: number;
   reviewer_id: string;
   resolved_graph_fingerprint: string;
+  document_id?: string;
+  knowledge_version_id?: string;
 }
 
 export interface AcademicNode {

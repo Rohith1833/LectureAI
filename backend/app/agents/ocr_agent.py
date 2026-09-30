@@ -2,6 +2,7 @@ import os
 import hashlib
 import json
 import time
+import uuid
 from typing import List, Dict, Any, Tuple
 import fitz  # PyMuPDF
 from loguru import logger
@@ -163,10 +164,10 @@ class OCRAgent:
                         
                         cached_blocks = []
                         for cb_dict in cached_data["blocks"]:
-                            # Reconstruct BlockSchema objects
+                            # Reconstruct BlockSchema objects with unique block IDs
                             cached_blocks.append(
                                 BlockSchema(
-                                    block_id=cb_dict["block_id"],
+                                    block_id=str(uuid.uuid4()),
                                     page_number=page_number,  # preserve current page number mapping
                                     reading_order=cb_dict["reading_order"],
                                     block_type=BlockType(cb_dict["block_type"]),

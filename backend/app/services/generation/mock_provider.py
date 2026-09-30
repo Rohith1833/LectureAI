@@ -82,22 +82,53 @@ class MockLLMProvider:
         except Exception:
           structured_data = {"slides": []}
       else:
-        # Extract supplied IDs and titles from prompt
-        # Context entities are formatted strictly as: "- [CATEGORY] (node_id) Title: content"
-        node_matches = re.findall(r"-\s*\[(?:[A-Za-z0-9_]+)\]\s*\(([a-zA-Z0-9_-]+)\)\s*([^:\n]+):", request.prompt)
-        source_node_ids = [m[0] for m in node_matches]
-        titles = [m[1].strip() for m in node_matches]
+        # Extract supplied IDs, titles, and content excerpts from prompt
+        # Context entities are formatted as: "- [CATEGORY] (node_id) Title: content"
+        source_node_ids = []
+        titles = []
+        contents = []
+        for line in request.prompt.split("\n"):
+          line = line.strip()
+          if line.startswith("- [") and " (" in line and ") " in line:
+            id_start = line.index("(") + 1
+            id_end = line.index(")", id_start)
+            nid = line[id_start:id_end]
+            rest = line[id_end + 1:].strip()
+            if ":" in rest:
+              # Take everything up to the first colon after title as title, remainder as content
+              # E.g. "Topic 2.1: Cellular Respiration Overview: Cellular respiration transforms..."
+              # If there are multiple colons, match the one that precedes content
+              colons = [i for i, ch in enumerate(rest) if ch == ":"]
+              if len(colons) > 1:
+                # The last colon separates title from content
+                t = rest[:colons[-1]].strip()
+                c = rest[colons[-1] + 1:].strip()
+              else:
+                parts = rest.split(":", 1)
+                t = parts[0].strip()
+                c = parts[1].strip()
+            else:
+              t = rest
+              c = rest
+            source_node_ids.append(nid)
+            titles.append(t)
+            contents.append(c)
+
         evidence_ids = re.findall(r"\[Evidence ID:\s*([a-zA-Z0-9_-]+)\]", request.prompt)
 
         slides = []
         unit_title = titles[0] if titles else "Curriculum Overview"
         unit_sid = [source_node_ids[0]] if source_node_ids else []
+        unit_content_snippet = (
+            contents[0][:200].strip() if contents and contents[0]
+            else f"Introductory syllabus and objectives for {unit_title}"
+        )
 
         # Title slide
         slides.append({
             "slide_type": "TITLE",
             "title": unit_title,
-            "content": [f"Introductory syllabus and objectives for {unit_title}"],
+            "content": [unit_content_snippet],
             "speaker_notes": f"Welcome to {unit_title}. This unit establishes core theoretical concepts.",
             "source_node_ids": unit_sid,
             "evidence_ids": [evidence_ids[0]] if evidence_ids else []
@@ -108,12 +139,16 @@ class MockLLMProvider:
           for idx, sid in enumerate(source_node_ids[1:], start=1):
             t_name = titles[idx].strip() if idx < len(titles) else f"Academic Topic {idx}"
             ev_list = [evidence_ids[idx % len(evidence_ids)]] if evidence_ids else []
+            body_snippet = (
+                contents[idx][:200].strip() if idx < len(contents) and contents[idx]
+                else f"Foundational concepts and principles of {t_name}."
+            )
             slides.append({
                 "slide_type": "CONTENT",
                 "title": t_name,
                 "content": [
-                    f"Foundational concepts and principles of {t_name}.",
-                    f"Theoretical formulation and mathematical derivations.",
+                    body_snippet,
+                    f"Theoretical formulation and mathematical derivations of {t_name}.",
                     f"Practical applications and case study analysis."
                 ],
                 "speaker_notes": f"Detailed educational exposition for {t_name}.",
@@ -125,7 +160,7 @@ class MockLLMProvider:
               "slide_type": "CONTENT",
               "title": f"{unit_title}: Key Concepts",
               "content": [
-                  "Comprehensive foundational knowledge covering primary principles.",
+                  unit_content_snippet,
                   "Systematic structural properties and formal definitions.",
                   "Methodological analysis and applied examples."
               ],

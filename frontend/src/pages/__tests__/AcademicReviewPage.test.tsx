@@ -102,4 +102,45 @@ describe("AcademicReviewPage", () => {
       });
     });
   });
+
+  it("renders Generate Slides button in header when document review state is APPROVED", async () => {
+    vi.mocked(reviewService.getReviewSummary).mockResolvedValue({
+      ...mockSummary,
+      document_review_state: "APPROVED",
+      is_approved: true,
+    } as any);
+
+    renderComponent();
+
+    const generateSlidesBtn = await screen.findByTestId("header-generate-slides-button");
+    expect(generateSlidesBtn).toBeInTheDocument();
+  });
+
+  it("renders Proceed to Slide Generation button upon successful graph approval", async () => {
+    vi.mocked(reviewService.getApprovalReadiness).mockResolvedValue({
+      eligible: true,
+      blocking_reasons: [],
+    } as any);
+    vi.mocked(reviewService.approveGraph).mockResolvedValue({
+      success: true,
+      approval_version: "v1",
+      approved_revision: 0,
+      resolved_graph_fingerprint: "fp_test_123",
+      document_id: "doc-1",
+      knowledge_version_id: "ver-1",
+    } as any);
+
+    renderComponent();
+
+    const approveBtn = await screen.findByRole("button", { name: /Approve Graph/i });
+    fireEvent.click(approveBtn);
+
+    // Confirm dialog opens
+    const confirmBtn = await screen.findByRole("button", { name: /Confirm Approval/i });
+    fireEvent.click(confirmBtn);
+
+    // Approval modal appears with Proceed to Slide Generation button
+    const proceedBtn = await screen.findByTestId("proceed-to-slides-button");
+    expect(proceedBtn).toBeInTheDocument();
+  });
 });

@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator
 
@@ -85,7 +86,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 ALLOWED_DEVELOPMENT_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-]
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+] + [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 
 
 class CORSAppProxy:

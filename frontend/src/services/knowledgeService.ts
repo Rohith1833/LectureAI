@@ -73,3 +73,23 @@ export async function getEntityRelationships(
   );
   return response.data.data;
 }
+
+import type { SelectableContainersData } from "../types/artifact";
+
+export async function getDocumentSelectableContainers(
+  documentId: string
+): Promise<SelectableContainersData> {
+  const response = await apiClient.get<StandardResponse<SelectableContainersData>>(
+    `/knowledge/document/${documentId}/selectable-containers`
+  );
+  return response.data.data;
+}
+
+export async function getVersionSelectableContainers(
+  versionId: string
+): Promise<SelectableContainersData> {
+  const response = await apiClient.get<StandardResponse<SelectableContainersData>>(
+    `/knowledge/versions/${versionId}/selectable-containers`
+  );
+  return response.data.data;
+}
