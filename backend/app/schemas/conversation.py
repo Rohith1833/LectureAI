@@ -1,7 +1,7 @@
 import time
 from enum import Enum
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
 class ConversationStatus(str, Enum):
@@ -85,8 +85,7 @@ class MessageRead(BaseModel):
     created_at: float
     metadata_json: Optional[Dict[str, Any]] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ConversationRead(BaseModel):
@@ -101,5 +100,4 @@ class ConversationRead(BaseModel):
     message_count: int = 0
     messages: Optional[List[MessageRead]] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

@@ -120,7 +120,7 @@ class FailingNormalizer(BaseNormalizer):
         raise RuntimeError("Something went wrong inside Normalizer step run.")
 
 
-class TestLifecycleHook(PipelineLifecycleHook):
+class MockLifecycleHook(PipelineLifecycleHook):
     """Mock lifecycle observer to record callback executions."""
 
     def __init__(self):
@@ -263,7 +263,7 @@ class TestNormalizationArchitecture(unittest.TestCase):
         """Verify lifecycle hook triggers execute in correct order."""
         pipeline = NormalizationPipeline()
         pipeline.register_step(MockNormalizerA())
-        hook = TestLifecycleHook()
+        hook = MockLifecycleHook()
         pipeline.register_hook(hook)
 
         meta = ImmutableMetadata(upload_id="u123")

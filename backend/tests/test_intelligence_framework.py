@@ -70,7 +70,7 @@ class FailingModule(DummyModule):
         raise RuntimeError("Something failed inside module execution.")
 
 
-class TestEventListener(PipelineEventListener):
+class MockEventListener(PipelineEventListener):
     """Mock listener capturing events published during pipeline runs."""
 
     def __init__(self):
@@ -165,7 +165,7 @@ class TestIntelligenceFramework(unittest.TestCase):
         engine = IntelligenceEngine(config)
 
         # Subscribe mock event listener
-        listener = TestEventListener()
+        listener = MockEventListener()
         engine.publisher.subscribe(listener)
 
         # Initialize mock components
@@ -207,7 +207,7 @@ class TestIntelligenceFramework(unittest.TestCase):
         config.strict_mode = False
 
         engine = IntelligenceEngine(config)
-        listener = TestEventListener()
+        listener = MockEventListener()
         engine.publisher.subscribe(listener)
 
         m_ok = DummyModule("OKModule", deps=[])

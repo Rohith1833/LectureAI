@@ -87,7 +87,7 @@ async def test_generation_pipeline_success(db: Session, mock_plan):
         upload_id="test_upload",
         knowledge_version_id="test_kv_id",
         artifact_type=ArtifactType.PPTX,
-        config={"num_units": 1}
+        config={"num_units": 1, "provider": "mock"}
     ))
     
     service = ArtifactService(db)
@@ -137,7 +137,7 @@ async def test_generation_pipeline_validation_failure(db: Session, mock_plan):
         upload_id="test_upload_fail",
         knowledge_version_id="test_kv_id_fail",
         artifact_type=ArtifactType.PPTX,
-        config={}
+        config={"provider": "mock"}
     ))
     
     service = ArtifactService(db)
