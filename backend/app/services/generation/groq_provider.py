@@ -19,9 +19,9 @@ class GroqProvider:
       api_key: Optional[str] = None,
       model: Optional[str] = None,
       timeout: float = 30.0,
-      max_retries: int = 2,
+      max_retries: int = 4,
       base_backoff: float = 1.0,
-      max_retry_wait_budget: float = 15.0
+      max_retry_wait_budget: float = 60.0
   ):
     self.api_key = api_key or settings.GROQ_API_KEY
     self.model = model or settings.GROQ_MODEL
@@ -41,10 +41,10 @@ class GroqProvider:
     
     Provider bounds:
     - Per-attempt timeout: self.timeout (default 30.0s)
-    - Max attempts: self.max_retries + 1 (default 3 attempts)
+    - Max attempts: self.max_retries + 1 (default 5 attempts)
     - Exponential backoff: base_backoff * (2 ** attempt) (1.0s, 2.0s)
-    - Retry-After wait budget: max_retry_wait_budget (default 15.0s). If provider requests > budget, halts immediately.
-    - Max total duration worst-case: (attempts * timeout) + (retries * max_wait_budget) = (3 * 30) + (2 * 15) = 120s.
+    - Retry-After wait budget: max_retry_wait_budget (default 60.0s). If provider requests > budget, halts immediately.
+    - Max total duration worst-case: (attempts * timeout) + (retries * max_wait_budget) = (5 * 30) + (4 * 60) = 390s.
     """
     messages = []
     if request.system_instruction:

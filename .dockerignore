@@ -1,0 +1,10 @@
+node_modules
+.git
+.venv
+__pycache__
+.pytest_cache
+dist
+data/
+*.sqlite
+*.db
+.env

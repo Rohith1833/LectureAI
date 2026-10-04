@@ -233,21 +233,29 @@ class GenerationService:
         # Step 8: Persist USER & ASSISTANT messages on success (8G-2)         #
         # ------------------------------------------------------------------ #
         if request.conversation_id is not None and self.message_repo is not None:
-            # 1. Persist USER message
-            self.message_repo.append_message(
-                conversation_id=request.conversation_id,
-                role="USER",
-                content=request.query,
-            )
-            # 2. Persist ASSISTANT message
-            self.message_repo.append_message(
-                conversation_id=request.conversation_id,
-                role="ASSISTANT",
-                content=result.answer,
-            )
-            logger.debug(
-                "GenerationService: persisted USER and ASSISTANT messages to conversation '{}'",
-                request.conversation_id,
-            )
+            try:
+                # 1. Persist USER message
+                self.message_repo.append_message(
+                    conversation_id=request.conversation_id,
+                    role="USER",
+                    content=request.query,
+                )
+                # 2. Persist ASSISTANT message
+                self.message_repo.append_message(
+                    conversation_id=request.conversation_id,
+                    role="ASSISTANT",
+                    content=result.answer,
+                    metadata_json=result.model_dump(mode="json"),
+                )
+                logger.debug(
+                    "GenerationService: persisted USER and ASSISTANT messages to conversation '{}'",
+                    request.conversation_id,
+                )
+            except Exception as e:
+                logger.error(
+                    "GenerationService: failed to persist messages to conversation '{}': {}",
+                    request.conversation_id,
+                    str(e),
+                )
 
         return result

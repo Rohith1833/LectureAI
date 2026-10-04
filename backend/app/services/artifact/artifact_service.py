@@ -127,12 +127,13 @@ class ArtifactService:
                 "Please submit a new generation request."
             )
             job.completed_at = datetime.utcnow()
-            out_path = ARTIFACTS_DIR / f"artifact_{job.id}.pptx"
-            if out_path.exists():
-                try:
-                    out_path.unlink()
-                except Exception:
-                    pass
+            for ext in (".pptx", ".md", ".csv"):
+                out_path = ARTIFACTS_DIR / f"artifact_{job.id}{ext}"
+                if out_path.exists():
+                    try:
+                        out_path.unlink()
+                    except Exception:
+                        pass
             recovered += 1
         if recovered > 0:
             self.db.commit()
@@ -162,6 +163,20 @@ class ArtifactService:
                 return
 
             current_stage = "PLANNING"
+            from app.schemas.artifact import ArtifactType
+            if job.artifact_type in (ArtifactType.STUDY_GUIDE_MD, ArtifactType.PRACTICE_EXAM_MD):
+                out_path = ARTIFACTS_DIR / f"artifact_{job_id}.md"
+            elif job.artifact_type == ArtifactType.FLASHCARDS_CSV:
+                out_path = ARTIFACTS_DIR / f"artifact_{job_id}.csv"
+            else:
+                out_path = ARTIFACTS_DIR / f"artifact_{job_id}.pptx"
+
+            from app.api.websocket_manager import manager
+            await manager.broadcast_to_upload(
+                job.upload_id, 
+                {"type": "job_update", "job": ArtifactJobRead.model_validate(job).model_dump(mode='json')}
+            )
+
                 
             # 1. Initialize services
             knowledge_repo = KnowledgeRepository(self.db)
@@ -179,7 +194,6 @@ class ArtifactService:
             
             planner = ArtifactPlanner(knowledge_repo, retrieval_service, llm_provider)
             validator = ArtifactValidator()
-            renderer = PPTXRenderer()
             
             # Resolve effective selection shared across planning and validation
             effective_selection = resolve_effective_selection_for_job(self.db, job)
@@ -207,37 +221,87 @@ class ArtifactService:
             job.plan = plan.model_dump()
             self.db.commit()
 
-            # 4. Transition to RENDERING
             current_stage = "RENDERING"
             job = self.repo.update_job_status(job_id, ArtifactStatus.RENDERING)
-            
+            await manager.broadcast_to_upload(
+                job.upload_id, 
+                {"type": "job_update", "job": ArtifactJobRead.model_validate(job).model_dump(mode='json')}
+            )
+
             # 5. Rendering (Phase 9B)
             out_dir = ARTIFACTS_DIR
             out_dir.mkdir(parents=True, exist_ok=True)
             
-            result_path = renderer.render(plan, str(out_path))
+            if job.artifact_type in (ArtifactType.STUDY_GUIDE_MD, ArtifactType.PRACTICE_EXAM_MD):
+                from app.services.artifact.md_renderer import MDRenderer
+                renderer_instance = MDRenderer()
+                out_path = out_dir / f"artifact_{job_id}.md"
+            elif job.artifact_type == ArtifactType.FLASHCARDS_CSV:
+                from app.services.artifact.csv_renderer import CSVRenderer
+                renderer_instance = CSVRenderer()
+                out_path = out_dir / f"artifact_{job_id}.csv"
+            else:
+                renderer_instance = PPTXRenderer()
+                out_path = out_dir / f"artifact_{job_id}.pptx"
+            
+            result_path = renderer_instance.render(plan, str(out_path))
             
             # 6. Reopen verification: ensure artifact exists and is not corrupt
             current_stage = "VERIFICATION"
             if not os.path.exists(result_path) or os.path.getsize(result_path) == 0:
                 raise ValueError(f"Rendered artifact file is missing or empty at {result_path}")
-            try:
-                prs_check = pptx.Presentation(result_path)
-                if len(prs_check.slides) == 0:
-                    raise ValueError("Rendered artifact presentation contains zero slides")
-            except Exception as pe:
-                if os.path.exists(result_path):
-                    try:
-                        os.remove(result_path)
-                    except Exception:
-                        pass
-                raise ValueError(f"Rendered artifact failed integrity verification: {str(pe)}")
+            
+            if job.artifact_type == ArtifactType.PPTX:
+                try:
+                    prs_check = pptx.Presentation(result_path)
+                    if len(prs_check.slides) == 0:
+                        raise ValueError("Rendered artifact presentation contains zero slides")
+                except Exception as pe:
+                    if os.path.exists(result_path):
+                        try:
+                            os.remove(result_path)
+                        except Exception:
+                            pass
+                    raise ValueError(f"Rendered artifact failed integrity verification: {str(pe)}")
+            elif job.artifact_type == ArtifactType.FLASHCARDS_CSV:
+                try:
+                    import csv
+                    with open(result_path, "r", encoding="utf-8") as f:
+                        reader = csv.reader(f)
+                        rows = list(reader)
+                        if not rows or rows[0] != ["Front", "Back", "Notes"]:
+                            raise ValueError("Rendered CSV flashcard header is invalid")
+                except Exception as ce:
+                    if os.path.exists(result_path):
+                        try:
+                            os.remove(result_path)
+                        except Exception:
+                            pass
+                    raise ValueError(f"Rendered artifact failed integrity verification: {str(ce)}")
+            elif job.artifact_type in (ArtifactType.STUDY_GUIDE_MD, ArtifactType.PRACTICE_EXAM_MD):
+                try:
+                    with open(result_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                        if not content.strip():
+                            raise ValueError("Rendered markdown artifact is empty")
+                except Exception as me:
+                    if os.path.exists(result_path):
+                        try:
+                            os.remove(result_path)
+                        except Exception:
+                            pass
+                    raise ValueError(f"Rendered artifact failed integrity verification: {str(me)}")
 
             # 7. COMPLETED
             job.artifact_uri = str(result_path)
             job.status = ArtifactStatus.COMPLETED.value
             job.completed_at = datetime.utcnow()
             self.db.commit()
+            
+            await manager.broadcast_to_upload(
+                job.upload_id, 
+                {"type": "job_update", "job": ArtifactJobRead.model_validate(job).model_dump(mode='json')}
+            )
             
             logger.info(f"Successfully completed artifact job {job_id}")
 
@@ -246,11 +310,13 @@ class ArtifactService:
             logger.error(traceback.format_exc())
             
             # Clean up partial file on failure: do not leave a downloadable partial artifact
-            if out_path.exists():
-                try:
-                    out_path.unlink()
-                except Exception:
-                    pass
+            for ext in (".pptx", ".md", ".csv"):
+                cand = ARTIFACTS_DIR / f"artifact_{job_id}{ext}"
+                if cand.exists():
+                    try:
+                        cand.unlink()
+                    except Exception:
+                        pass
 
             # Transition to FAILED
             try:
@@ -262,6 +328,11 @@ class ArtifactService:
                     job.completed_at = datetime.utcnow()
                     job.artifact_uri = None
                     self.db.commit()
+                    from app.api.websocket_manager import manager
+                    await manager.broadcast_to_upload(
+                        job.upload_id, 
+                        {"type": "job_update", "job": ArtifactJobRead.model_validate(job).model_dump(mode='json')}
+                    )
             except Exception as inner_e:
                 logger.error(f"Failed to save FAILED status for job {job_id}: {str(inner_e)}")
                 self.db.rollback()

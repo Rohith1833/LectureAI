@@ -23,6 +23,7 @@ import {
   Search,
   BookOpen,
 } from "lucide-react";
+import InteractiveStudyModal from "@/components/study/InteractiveStudyModal";
 
 // Active states that require polling
 const ACTIVE_STATUSES: ArtifactStatus[] = [
@@ -49,14 +50,14 @@ const DEPTH_OPTIONS = [
   { value: "detailed", label: "Detailed" },
 ] as const;
 
-export function formatBackendError(err: unknown): string {
+function formatBackendError(err: unknown): string {
   if (err && typeof err === "object" && "response" in err) {
-    const resp = (err as any).response;
+    const resp = (err as { response?: { data?: Record<string, unknown>; status?: number; statusText?: string } }).response;
     if (resp?.data) {
       const data = resp.data;
       if (typeof data.detail === "string") return data.detail;
       if (Array.isArray(data.detail)) {
-        return data.detail.map((d: any) => d.msg || JSON.stringify(d)).join("; ");
+        return data.detail.map((d: unknown) => (d && typeof d === "object" && "msg" in d ? String((d as { msg: string }).msg) : JSON.stringify(d))).join("; ");
       }
       if (typeof data.message === "string") return data.message;
     }
@@ -87,6 +88,7 @@ export default function ArtifactWorkspacePage() {
   const [containerSearch, setContainerSearch] = useState("");
 
   // --- Configuration State ---
+  const [artifactType, setArtifactType] = useState<ArtifactType>(ArtifactType.PPTX);
   const [audienceLevel, setAudienceLevel] = useState("general");
   const [depth, setDepth] = useState("standard");
   const [includeExamples, setIncludeExamples] = useState(true);
@@ -97,6 +99,7 @@ export default function ArtifactWorkspacePage() {
   const [pollingJobId, setPollingJobId] = useState<string | null>(null);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [studyingJob, setStudyingJob] = useState<ArtifactJobRead | null>(null);
 
   // Keep track of mounted state
   useEffect(() => {
@@ -215,37 +218,89 @@ export default function ArtifactWorkspacePage() {
     }
   }, [version, loadJobs]);
 
-  // --- Poll for active job status ---
+  // --- Real-time WebSocket connection for job status ---
+  useEffect(() => {
+    if (!version) return;
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    let wsBaseUrl = "";
+    
+    const apiBaseUrl = import.meta.env.VITE_API_URL || "/api/v1";
+    if (apiBaseUrl.startsWith("http")) {
+      wsBaseUrl = apiBaseUrl.replace(/^http/, "ws");
+    } else {
+      wsBaseUrl = `${protocol}//${window.location.host}${apiBaseUrl}`;
+    }
+
+    const wsUrl = `${wsBaseUrl}/artifacts/ws/${version.upload_id}`;
+    const ws = new WebSocket(wsUrl);
+
+    ws.onmessage = (event) => {
+      if (!isMountedRef.current) return;
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === "job_update" && data.job) {
+          const updated = data.job;
+          setJobs((prev) => {
+            const exists = prev.find((j) => j.id === updated.id);
+            if (exists) {
+              return prev.map((j) => (j.id === updated.id ? updated : j));
+            } else {
+              return [updated, ...prev];
+            }
+          });
+          
+          if (TERMINAL_STATUSES.includes(updated.status as ArtifactStatus)) {
+            setPollingJobId((prev) => (prev === updated.id ? null : prev));
+          }
+        }
+      } catch (err) {
+        console.error("Failed to parse WebSocket message", err);
+      }
+    };
+
+    ws.onerror = (err) => {
+      console.warn("WebSocket error:", err);
+    };
+
+    return () => {
+      ws.close();
+    };
+  }, [version]);
+
+  // --- Polling fallback for active job ---
   useEffect(() => {
     if (!pollingJobId) return;
 
-    let consecutiveErrors = 0;
-    const interval = setInterval(async () => {
-      if (!isMountedRef.current) return;
+    let cancelled = false;
 
+    const poll = async () => {
       try {
         const updated = await artifactService.getJobStatus(pollingJobId);
-        if (!isMountedRef.current) return;
+        if (cancelled || !isMountedRef.current) return;
 
-        consecutiveErrors = 0;
-        setJobs((prev) =>
-          prev.map((j) => (j.id === pollingJobId ? updated : j))
-        );
+        setJobs((prev) => {
+          const exists = prev.find((j) => j.id === updated.id);
+          if (exists) {
+            return prev.map((j) => (j.id === updated.id ? updated : j));
+          } else {
+            return [updated, ...prev];
+          }
+        });
 
         if (TERMINAL_STATUSES.includes(updated.status as ArtifactStatus)) {
           setPollingJobId(null);
         }
       } catch {
-        // Handle transient network errors without pretending the backend job failed or completed
-        consecutiveErrors += 1;
-        if (consecutiveErrors >= 10) {
-          // Only stop polling after sustained failure to reach backend
-          setPollingJobId(null);
-        }
+        // Transient network error: keep polling without failing the job
       }
-    }, 2000);
+    };
 
-    return () => clearInterval(interval);
+    const interval = setInterval(poll, 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [pollingJobId]);
 
   // --- Filtered selectable containers ---
@@ -299,7 +354,7 @@ export default function ArtifactWorkspacePage() {
       const newJob = await artifactService.generateArtifact({
         upload_id: version.upload_id, // Authoritative upload_id from finalized version
         knowledge_version_id: version.id,
-        artifact_type: ArtifactType.PPTX,
+        artifact_type: artifactType,
         config: {
           audience_level: audienceLevel,
           depth: depth,
@@ -330,9 +385,9 @@ export default function ArtifactWorkspacePage() {
       case ArtifactStatus.PENDING:
         return "Pending";
       case ArtifactStatus.PLANNING:
-        return "Planning slides…";
+        return "Planning content…";
       case ArtifactStatus.RENDERING:
-        return "Rendering PPTX…";
+        return "Rendering artifact…";
       case ArtifactStatus.COMPLETED:
         return "Completed";
       case ArtifactStatus.FAILED:
@@ -721,12 +776,34 @@ export default function ArtifactWorkspacePage() {
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
           <div className="p-5 border-b border-gray-200">
             <h2 className="text-base font-semibold text-gray-900">
-              Presentation Options
+              Generation Options
             </h2>
           </div>
           <div className="p-5 space-y-5">
-            {/* Row 1: Audience Level + Depth */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            {/* Row 1: Artifact Type + Audience Level + Depth */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+              <div>
+                <label
+                  htmlFor="artifact-type"
+                  className="block text-sm font-medium text-gray-700 mb-1"
+                >
+                  Artifact Type
+                </label>
+                <select
+                  id="artifact-type"
+                  data-testid="artifact-type-select"
+                  value={artifactType}
+                  onChange={(e) => setArtifactType(e.target.value as ArtifactType)}
+                  disabled={isGenerating}
+                  className="w-full rounded-md border border-gray-300 py-2 px-3 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                >
+                  <option value={ArtifactType.PPTX}>PowerPoint (PPTX)</option>
+                  <option value={ArtifactType.STUDY_GUIDE_MD}>Study Guide (Markdown)</option>
+                  <option value={ArtifactType.FLASHCARDS_CSV}>Flashcards (CSV)</option>
+                  <option value={ArtifactType.PRACTICE_EXAM_MD}>Practice Exam (Markdown)</option>
+                </select>
+              </div>
+
               <div>
                 <label
                   htmlFor="audience-level"
@@ -943,6 +1020,19 @@ export default function ArtifactWorkspacePage() {
                         {statusLabel(job.status as ArtifactStatus)}
                       </span>
 
+                      {/* Study Deck button: for COMPLETED jobs with slides */}
+                      {isJobCompleted && job.plan && Array.isArray((job.plan as any).slides) && (job.plan as any).slides.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setStudyingJob(job)}
+                          data-testid={`job-study-${job.id}`}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-violet-200 dark:border-violet-800 text-xs font-semibold rounded-lg text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-950/40 hover:bg-violet-100 dark:hover:bg-violet-900/50 shadow-xs transition-colors cursor-pointer"
+                        >
+                          <BookOpen className="size-3.5 text-violet-600 dark:text-violet-400" />
+                          Study Deck
+                        </button>
+                      )}
+
                       {/* Download button: ONLY for COMPLETED */}
                       {isJobCompleted && (
                         <a
@@ -952,7 +1042,13 @@ export default function ArtifactWorkspacePage() {
                           className="inline-flex items-center gap-1.5 px-3.5 py-1.5 border border-transparent text-xs font-semibold rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 shadow-xs transition-colors cursor-pointer"
                         >
                           <Download className="size-3.5" />
-                          Download PPTX
+                          {job.artifact_type === ArtifactType.FLASHCARDS_CSV
+                            ? "Download CSV"
+                            : job.artifact_type === ArtifactType.STUDY_GUIDE_MD
+                            ? "Download Guide (.md)"
+                            : job.artifact_type === ArtifactType.PRACTICE_EXAM_MD
+                            ? "Download Exam (.md)"
+                            : "Download PPTX"}
                         </a>
                       )}
                     </div>
@@ -963,6 +1059,15 @@ export default function ArtifactWorkspacePage() {
           </div>
         )}
       </main>
+
+      {/* Interactive In-Browser Study Deck Modal */}
+      {studyingJob && (
+        <InteractiveStudyModal
+          job={studyingJob}
+          isOpen={!!studyingJob}
+          onClose={() => setStudyingJob(null)}
+        />
+      )}
     </div>
   );
 }

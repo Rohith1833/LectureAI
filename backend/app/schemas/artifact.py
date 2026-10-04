@@ -12,6 +12,9 @@ class ArtifactStatus(str, Enum):
 
 class ArtifactType(str, Enum):
     PPTX = "PPTX"
+    STUDY_GUIDE_MD = "STUDY_GUIDE_MD"
+    FLASHCARDS_CSV = "FLASHCARDS_CSV"
+    PRACTICE_EXAM_MD = "PRACTICE_EXAM_MD"
 
 class SlideType(str, Enum):
     TITLE = "TITLE"

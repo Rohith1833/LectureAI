@@ -338,7 +338,7 @@ export default function GenerationWorkspacePage() {
           )}
 
           {/* D. Latest Grounded Generation Result View */}
-          {result && !generationMutation.isPending && (
+          {result && !activeConv && !generationMutation.isPending && (
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between px-1">
                 <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">

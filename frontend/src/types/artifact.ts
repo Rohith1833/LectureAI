@@ -2,6 +2,9 @@ export const ArtifactType = {
   PPTX: "PPTX",
   DOCX: "DOCX",
   MD: "MD",
+  STUDY_GUIDE_MD: "STUDY_GUIDE_MD",
+  FLASHCARDS_CSV: "FLASHCARDS_CSV",
+  PRACTICE_EXAM_MD: "PRACTICE_EXAM_MD",
 } as const;
 export type ArtifactType = typeof ArtifactType[keyof typeof ArtifactType];
 
@@ -52,6 +55,20 @@ export interface ArtifactJobCreate {
   };
 }
 
+export interface SlideModel {
+  slide_type?: string;
+  title: string;
+  content: string[];
+  speaker_notes?: string;
+  source_node_ids?: string[];
+  evidence_ids?: string[];
+}
+
+export interface ArtifactPlan {
+  slides: SlideModel[];
+  metadata?: Record<string, any>;
+}
+
 export interface ArtifactJobRead {
   id: string;
   upload_id: string;
@@ -59,7 +76,7 @@ export interface ArtifactJobRead {
   artifact_type: ArtifactType;
   status: ArtifactStatus;
   config: Record<string, any>;
-  plan?: Record<string, any> | null;
+  plan?: ArtifactPlan | Record<string, any> | null;
   artifact_uri?: string | null;
   error_message?: string | null;
   created_at: string | number;

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import List
@@ -10,6 +10,19 @@ from app.services.artifact.artifact_service import ArtifactService
 import asyncio
 
 router = APIRouter()
+
+from app.api.websocket_manager import manager
+
+@router.websocket("/ws/{upload_id}")
+async def websocket_endpoint(websocket: WebSocket, upload_id: str):
+    await manager.connect(websocket, upload_id)
+    try:
+        while True:
+            # Keep connection open, await client messages (if any)
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, upload_id)
+
 
 # Session maker factory for background generation, defaults to SessionLocal
 background_session_maker = SessionLocal
@@ -81,16 +94,27 @@ def download_artifact(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     
-    from app.schemas.artifact import ArtifactStatus
+    from app.schemas.artifact import ArtifactStatus, ArtifactType
     if job.status != ArtifactStatus.COMPLETED.value:
         raise HTTPException(status_code=400, detail="Artifact is not ready for download or job failed")
         
     if not job.artifact_uri or not os.path.exists(job.artifact_uri):
         raise HTTPException(status_code=404, detail="Artifact file not found")
         
+    media_types = {
+        ArtifactType.PPTX.value: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        ArtifactType.STUDY_GUIDE_MD.value: "text/markdown; charset=utf-8",
+        ArtifactType.PRACTICE_EXAM_MD.value: "text/markdown; charset=utf-8",
+        ArtifactType.FLASHCARDS_CSV.value: "text/csv; charset=utf-8",
+    }
+    media_type = media_types.get(
+        job.artifact_type.value if hasattr(job.artifact_type, "value") else str(job.artifact_type),
+        "application/octet-stream"
+    )
+
     # Phase 9E file streaming
     return FileResponse(
         path=job.artifact_uri, 
         filename=os.path.basename(job.artifact_uri),
-        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        media_type=media_type
     )
