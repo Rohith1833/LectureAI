@@ -119,5 +119,7 @@ backend/app/storage/jobs/
 backend/app/storage/metadata/
 backend/app/storage/uploads/
 backend/app/storage/temp/
+backend/app/storage/pptx_outputs/
+backend/app/storage/presentations/
 
 backend/*.db.bak*

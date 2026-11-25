@@ -18,7 +18,7 @@ class GroqProvider:
       self,
       api_key: Optional[str] = None,
       model: Optional[str] = None,
-      timeout: float = 30.0,
+      timeout: float = 90.0,
       max_retries: int = 4,
       base_backoff: float = 1.0,
       max_retry_wait_budget: float = 60.0

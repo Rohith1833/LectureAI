@@ -106,29 +106,32 @@ def extract_pdf_document(upload_id: str, file_path: str) -> DocumentExtractionRe
                 PageSchema(page_number=page_number, width=width, height=height)
             )
 
-            # A. Extract Tables (PyMuPDF find_tables())
+            # A. Extract Tables (PyMuPDF find_tables() — skip on pages with no vector text)
             page_tables: List[TableSchema] = []
             try:
-                table_finder = page.find_tables()
-                for t_idx, table in enumerate(table_finder.tables):
-                    tb_coords = table.bbox
-                    t_bbox = BoundingBox(
-                        x0=tb_coords[0], y0=tb_coords[1], x1=tb_coords[2], y1=tb_coords[3]
-                    )
-                    cell_data = table.extract()
-
-                    # Filter out empty cells
-                    if cell_data:
-                        t_schema = TableSchema(
-                            table_id=str(uuid.uuid4()),
-                            page_number=page_number,
-                            bounding_box=t_bbox,
-                            rows_count=len(cell_data),
-                            columns_count=len(cell_data[0]) if cell_data else 0,
-                            data=cell_data,
+                quick_text = page.get_text("text") or ""
+                if len(quick_text.strip()) >= 20:
+                    table_finder = page.find_tables()
+                    for t_idx, table in enumerate(table_finder.tables):
+                        tb_coords = table.bbox
+                        t_bbox = BoundingBox(
+                            x0=tb_coords[0], y0=tb_coords[1], x1=tb_coords[2], y1=tb_coords[3]
                         )
-                        page_tables.append(t_schema)
-                        canonical_tables.append(t_schema)
+                        cell_data = table.extract()
+                        non_empty_cells = sum(1 for row in (cell_data or []) for cell in row if cell and str(cell).strip())
+
+                        # Only register real multi-cell tables (>= 2 rows, >= 2 cols, >= 3 non-empty cells)
+                        if cell_data and len(cell_data) >= 2 and len(cell_data[0]) >= 2 and non_empty_cells >= 3:
+                            t_schema = TableSchema(
+                                table_id=str(uuid.uuid4()),
+                                page_number=page_number,
+                                bounding_box=t_bbox,
+                                rows_count=len(cell_data),
+                                columns_count=len(cell_data[0]) if cell_data else 0,
+                                data=cell_data,
+                            )
+                            page_tables.append(t_schema)
+                            canonical_tables.append(t_schema)
             except Exception as tbl_err:
                 logger.warning(
                     "Table extraction failed on page {}: {}", page_number, str(tbl_err)
@@ -227,6 +230,29 @@ def extract_pdf_document(upload_id: str, file_path: str) -> DocumentExtractionRe
                     }
                 )
 
+            # Include extracted tables as structured TABLE blocks so they are preserved in reading order
+            for tbl in page_tables:
+                table_rows = []
+                for row in tbl.data:
+                    cleaned_row = [str(c).replace("\n", " ").strip() if c is not None else "" for c in row]
+                    if any(cleaned_row):
+                        table_rows.append(" | ".join(cleaned_row))
+                if table_rows:
+                    tb = tbl.bounding_box
+                raw_page_blocks.append(
+                        {
+                            "block_id": tbl.table_id,
+                            "bbox": (tb.x0, tb.y0, tb.x1, tb.y1),
+                            "text": "\n".join(table_rows),
+                            "font_size": 10.0,
+                            "font_family": "Table",
+                            "bold": False,
+                            "italic": False,
+                            "type": 0,
+                            "is_table": True,
+                        }
+                    )
+
             raw_pages_data.append(
                 {
                     "page_number": page_number,
@@ -249,6 +275,14 @@ def extract_pdf_document(upload_id: str, file_path: str) -> DocumentExtractionRe
             num_blocks = len(raw_blocks)
 
             for idx, block in enumerate(raw_blocks):
+                if block.get("is_table"):
+                    block["block_type"] = BlockType.TABLE
+                    block["confidence"] = 0.95
+                    block["extra_metadata"] = {"classification_reasoning": {"rule_override": "PyMuPDF table"}}
+                    block["heading_level"] = None
+                    all_blocks_flat.append(block)
+                    continue
+
                 prev_block = raw_blocks[idx - 1] if idx > 0 else None
                 next_block = raw_blocks[idx + 1] if idx < num_blocks - 1 else None
 
